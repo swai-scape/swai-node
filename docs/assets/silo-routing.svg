@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 450">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#5a8a5a"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#8a5a5a"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#5a5a8a"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="900" height="450" fill="#1a1a2e"/>
+
+  <!-- Title -->
+  <text x="450" y="30" text-anchor="middle" fill="#c0c0e0" font-family="monospace" font-size="16" font-weight="bold">Silo Signal Routing</text>
+
+  <!-- Domain Sensors Column -->
+  <rect x="30" y="50" width="150" height="350" rx="8" fill="#2d3d2d" stroke="#4a6a4a" stroke-width="2"/>
+  <text x="105" y="75" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="12" font-weight="bold">Domain Sensors</text>
+
+  <rect x="45" y="95" width="120" height="35" rx="4" fill="#3d5a3d" stroke="#5a8a5a"/>
+  <text x="105" y="117" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="10">vision_food</text>
+
+  <rect x="45" y="140" width="120" height="35" rx="4" fill="#3d5a3d" stroke="#5a8a5a"/>
+  <text x="105" y="162" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="10">smell</text>
+
+  <rect x="45" y="185" width="120" height="35" rx="4" fill="#5a3d3d" stroke="#8a5a5a"/>
+  <text x="105" y="207" text-anchor="middle" fill="#bc8f8f" font-family="monospace" font-size="10">vision_agent</text>
+
+  <rect x="45" y="230" width="120" height="35" rx="4" fill="#5a5a3d" stroke="#8a8a5a"/>
+  <text x="105" y="252" text-anchor="middle" fill="#bcbc8f" font-family="monospace" font-size="10">hearing</text>
+
+  <rect x="45" y="275" width="120" height="35" rx="4" fill="#3d3d5a" stroke="#5a5a8a"/>
+  <text x="105" y="297" text-anchor="middle" fill="#8f8fbc" font-family="monospace" font-size="10">energy</text>
+
+  <rect x="45" y="320" width="120" height="35" rx="4" fill="#3d3d5a" stroke="#5a5a8a"/>
+  <text x="105" y="342" text-anchor="middle" fill="#8f8fbc" font-family="monospace" font-size="10">age</text>
+
+  <!-- Silos Column -->
+  <rect x="280" y="50" width="340" height="350" rx="8" fill="#2d2d44" stroke="#4a4a6a" stroke-width="2"/>
+  <text x="450" y="75" text-anchor="middle" fill="#a0a0c0" font-family="monospace" font-size="12" font-weight="bold">Silos (by category)</text>
+
+  <rect x="300" y="95" width="130" height="70" rx="4" fill="#3d5a3d" stroke="#5a8a5a"/>
+  <text x="365" y="120" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="11">ecological_silo</text>
+  <text x="365" y="140" text-anchor="middle" fill="#6a8a6a" font-family="monospace" font-size="8">[ecological, resource]</text>
+  <text x="365" y="155" text-anchor="middle" fill="#5a7a5a" font-family="monospace" font-size="8">move_cost, food_rate</text>
+
+  <rect x="470" y="95" width="130" height="70" rx="4" fill="#5a3d3d" stroke="#8a5a5a"/>
+  <text x="535" y="120" text-anchor="middle" fill="#bc8f8f" font-family="monospace" font-size="11">competitive_silo</text>
+  <text x="535" y="140" text-anchor="middle" fill="#8a6a6a" font-family="monospace" font-size="8">[competitive, combat]</text>
+  <text x="535" y="155" text-anchor="middle" fill="#7a5a5a" font-family="monospace" font-size="8">attack_threshold</text>
+
+  <rect x="300" y="185" width="130" height="70" rx="4" fill="#5a5a3d" stroke="#8a8a5a"/>
+  <text x="365" y="210" text-anchor="middle" fill="#bcbc8f" font-family="monospace" font-size="11">communication_silo</text>
+  <text x="365" y="230" text-anchor="middle" fill="#8a8a6a" font-family="monospace" font-size="8">[social, signals]</text>
+  <text x="365" y="245" text-anchor="middle" fill="#7a7a5a" font-family="monospace" font-size="8">signal_range</text>
+
+  <rect x="470" y="185" width="130" height="70" rx="4" fill="#3d3d5a" stroke="#5a5a8a"/>
+  <text x="535" y="210" text-anchor="middle" fill="#8f8fbc" font-family="monospace" font-size="11">regulatory_silo</text>
+  <text x="535" y="230" text-anchor="middle" fill="#6a6a8a" font-family="monospace" font-size="8">[regulatory, internal]</text>
+  <text x="535" y="245" text-anchor="middle" fill="#5a5a7a" font-family="monospace" font-size="8">thresholds</text>
+
+  <rect x="385" y="275" width="130" height="70" rx="4" fill="#5a3d5a" stroke="#8a5a8a"/>
+  <text x="450" y="300" text-anchor="middle" fill="#bc8fbc" font-family="monospace" font-size="11">temporal_silo</text>
+  <text x="450" y="320" text-anchor="middle" fill="#8a6a8a" font-family="monospace" font-size="8">[temporal, lifecycle]</text>
+  <text x="450" y="335" text-anchor="middle" fill="#7a5a7a" font-family="monospace" font-size="8">survival rewards</text>
+
+  <!-- Domain Actuators Column -->
+  <rect x="720" y="50" width="150" height="350" rx="8" fill="#2d2d3d" stroke="#4a4a6a" stroke-width="2"/>
+  <text x="795" y="75" text-anchor="middle" fill="#a0a0c0" font-family="monospace" font-size="12" font-weight="bold">Domain Actuators</text>
+
+  <rect x="735" y="95" width="120" height="35" rx="4" fill="#3d5a3d" stroke="#5a8a5a"/>
+  <text x="795" y="117" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="10">move_cost</text>
+
+  <rect x="735" y="140" width="120" height="35" rx="4" fill="#3d5a3d" stroke="#5a8a5a"/>
+  <text x="795" y="162" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="10">food_spawn_rate</text>
+
+  <rect x="735" y="185" width="120" height="35" rx="4" fill="#5a3d3d" stroke="#8a5a5a"/>
+  <text x="795" y="207" text-anchor="middle" fill="#bc8f8f" font-family="monospace" font-size="10">attack_cost</text>
+
+  <rect x="735" y="230" width="120" height="35" rx="4" fill="#5a5a3d" stroke="#8a8a5a"/>
+  <text x="795" y="252" text-anchor="middle" fill="#bcbc8f" font-family="monospace" font-size="10">signal_range</text>
+
+  <rect x="735" y="275" width="120" height="35" rx="4" fill="#3d3d5a" stroke="#5a5a8a"/>
+  <text x="795" y="297" text-anchor="middle" fill="#8f8fbc" font-family="monospace" font-size="10">thresholds</text>
+
+  <!-- Arrows: Sensors to Silos -->
+  <line x1="165" y1="112" x2="295" y2="112" stroke="#5a8a5a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <line x1="165" y1="157" x2="295" y2="130" stroke="#5a8a5a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <line x1="165" y1="202" x2="465" y2="130" stroke="#8a5a5a" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <line x1="165" y1="247" x2="295" y2="210" stroke="#8a8a5a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="165" y1="292" x2="465" y2="210" stroke="#5a5a8a" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <line x1="165" y1="337" x2="465" y2="235" stroke="#5a5a8a" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- Arrows: Silos to Actuators -->
+  <line x1="435" y1="130" x2="730" y2="112" stroke="#5a8a5a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <line x1="435" y1="150" x2="730" y2="157" stroke="#5a8a5a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <line x1="605" y1="130" x2="730" y2="202" stroke="#8a5a5a" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <line x1="435" y1="220" x2="730" y2="247" stroke="#8a8a5a" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="605" y1="220" x2="730" y2="292" stroke="#5a5a8a" stroke-width="2" marker-end="url(#arrow-blue)"/>
+
+  <!-- Legend -->
+  <rect x="30" y="415" width="15" height="15" fill="#3d5a3d" stroke="#5a8a5a"/>
+  <text x="55" y="427" fill="#8fbc8f" font-family="monospace" font-size="10">ecological</text>
+
+  <rect x="150" y="415" width="15" height="15" fill="#5a3d3d" stroke="#8a5a5a"/>
+  <text x="175" y="427" fill="#bc8f8f" font-family="monospace" font-size="10">competitive</text>
+
+  <rect x="280" y="415" width="15" height="15" fill="#5a5a3d" stroke="#8a8a5a"/>
+  <text x="305" y="427" fill="#bcbc8f" font-family="monospace" font-size="10">communication</text>
+
+  <rect x="430" y="415" width="15" height="15" fill="#3d3d5a" stroke="#5a5a8a"/>
+  <text x="455" y="427" fill="#8f8fbc" font-family="monospace" font-size="10">regulatory</text>
+</svg>

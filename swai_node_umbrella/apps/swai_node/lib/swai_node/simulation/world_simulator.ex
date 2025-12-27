@@ -9,9 +9,9 @@ defmodule SwaiNode.Simulation.WorldSimulator do
   ## Simulation Features
 
   - 2D physics with movement and collision
-  - Vision raycasting (8 rays detecting food/walls/agents)
-  - Hearing (signals from nearby agents)
-  - Smell (food density, prey/threat detection)
+  - Vision raycasting (8 rays × 3 channels: food, agent, wall = 24 inputs)
+  - Hearing (signals from 4 nearest agents)
+  - Smell (food density, prey/threat density)
   - Food spawning and consumption
   - Predator-prey mechanics (attacks)
   """
@@ -19,7 +19,8 @@ defmodule SwaiNode.Simulation.WorldSimulator do
   alias SwaiNode.Simulation.{AgentBrain, Vision}
 
   # Simulation constants
-  @move_cost 0.12
+  # TODO: Wire to ecological_silo for dynamic tuning
+  @move_cost 0.05  # Lower cost = more time to learn
   @eat_range 18.0
   @eat_gain 40.0
   @max_energy 200.0

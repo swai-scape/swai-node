@@ -2,12 +2,16 @@ defmodule SwaiNode.Simulation.Vision do
   @moduledoc """
   Ray-casting vision system for agents.
 
-  Casts 8 rays in different directions to detect:
-  - Walls (world boundaries)
-  - Food
-  - Other agents
+  Casts 8 rays in different directions with SEPARATE channels for:
+  - Food (green channel)
+  - Agents (red channel)
+  - Walls (blue channel)
 
-  Returns normalized distances (0 = touching, 1 = max vision range).
+  This allows agents to distinguish between object types, enabling
+  evolution of food-seeking vs threat-avoidance behaviors.
+
+  Returns 24 floats: 8 rays × 3 channels (food, agent, wall).
+  Each value is normalized (0 = touching, 1 = max vision range or not seen).
   """
 
   @ray_count 8
@@ -22,35 +26,59 @@ defmodule SwaiNode.Simulation.Vision do
   @doc """
   Cast vision rays from an agent and return what they see.
 
-  Returns a list of 8 floats (0-1) representing distance to nearest object
-  in each direction. 1.0 means nothing detected within range.
+  Returns a list of 24 floats organized as:
+  - 8 food distances (rays 0-7)
+  - 8 agent distances (rays 0-7)
+  - 8 wall distances (rays 0-7)
+
+  Each value is 0-1 (0 = touching, 1 = max range or not detected).
   """
   @spec cast_rays(map(), list(map()), list(tuple()), {integer(), integer()}) :: list(float())
   def cast_rays(agent, other_agents, food_positions, {world_width, world_height}) do
     %{x: ax, y: ay, direction: direction} = agent
 
-    Enum.map(@ray_offsets, fn offset ->
+    # Cast all rays and collect per-channel results
+    ray_results = Enum.map(@ray_offsets, fn offset ->
       ray_angle = direction + offset
-      cast_single_ray(ax, ay, ray_angle, other_agents, food_positions, world_width, world_height)
+      cast_single_ray_multichannel(ax, ay, ray_angle, other_agents, food_positions, world_width, world_height)
     end)
+
+    # Reorganize: all food, then all agents, then all walls
+    food_distances = Enum.map(ray_results, fn {food, _agent, _wall} -> food end)
+    agent_distances = Enum.map(ray_results, fn {_food, agent, _wall} -> agent end)
+    wall_distances = Enum.map(ray_results, fn {_food, _agent, wall} -> wall end)
+
+    food_distances ++ agent_distances ++ wall_distances
   end
 
   @doc """
-  Cast a single ray and return normalized distance to nearest object.
+  Cast a single ray and return distances to each object type.
+
+  Returns {food_dist, agent_dist, wall_dist} as normalized values.
   """
-  def cast_single_ray(start_x, start_y, angle, other_agents, food_positions, world_width, world_height) do
+  def cast_single_ray_multichannel(start_x, start_y, angle, other_agents, food_positions, world_width, world_height) do
     # Calculate ray direction vector
     dx = :math.cos(angle)
     dy = :math.sin(angle)
 
-    # Find nearest hit among all object types
+    # Find distance to each object type separately
     wall_dist = distance_to_wall(start_x, start_y, dx, dy, world_width, world_height)
     food_dist = distance_to_nearest_food(start_x, start_y, dx, dy, food_positions)
     agent_dist = distance_to_nearest_agent(start_x, start_y, dx, dy, other_agents)
 
-    # Return normalized distance to nearest object
-    min_dist = Enum.min([wall_dist, food_dist, agent_dist])
-    normalize_distance(min_dist)
+    {normalize_distance(food_dist), normalize_distance(agent_dist), normalize_distance(wall_dist)}
+  end
+
+  @doc """
+  Cast a single ray and return normalized distance to nearest object (legacy).
+  Kept for backwards compatibility.
+  """
+  def cast_single_ray(start_x, start_y, angle, other_agents, food_positions, world_width, world_height) do
+    {food_dist, agent_dist, wall_dist} =
+      cast_single_ray_multichannel(start_x, start_y, angle, other_agents, food_positions, world_width, world_height)
+
+    # Return nearest of all three
+    Enum.min([food_dist, agent_dist, wall_dist])
   end
 
   # Calculate distance to wall along ray

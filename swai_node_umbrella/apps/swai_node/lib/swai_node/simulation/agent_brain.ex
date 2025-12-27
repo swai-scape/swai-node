@@ -5,8 +5,8 @@ defmodule SwaiNode.Simulation.AgentBrain do
   Uses macula_tweann's network_evaluator for fast synchronous evaluation.
 
   Network Architecture:
-  - Inputs (21):
-    - 8 vision rays (distance to nearest object in each direction)
+  - Inputs (37):
+    - 24 vision rays (8 rays × 3 channels: food, agent, wall)
     - 4 hearing channels (signals from 4 nearest agents, 0 if none)
     - 3 smell channels (food density, prey density, threat density)
     - Energy level (normalized 0-1)
@@ -14,18 +14,18 @@ defmodule SwaiNode.Simulation.AgentBrain do
     - Direction (sin, cos) = 2
     - Own signal (what I'm broadcasting)
     - Generation (normalized 0-1)
-  - Hidden: [28, 14] neurons with tanh activation
+  - Hidden: [48, 24] neurons with tanh activation
   - Outputs (6):
     - Turn (-1 to 1): how much to rotate
     - Move (0 to 1): forward movement speed
-    - Eat (0 to 1): threshold for eating action
-    - Reproduce (0 to 1): threshold for reproduction
+    - Eat (0 to 1): threshold for eating action (unused - eating is automatic)
+    - Reproduce (0 to 1): threshold for reproduction (unused - automatic)
     - Signal (0 to 1): broadcast value for communication
     - Attack (0 to 1): threshold for attacking nearby agents
   """
 
-  @input_size 21
-  @hidden_layers [28, 14]
+  @input_size 37
+  @hidden_layers [48, 24]
   @output_size 6
   @activation :tanh
 
@@ -34,6 +34,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
   @max_generation 100  # For normalization
   @hearing_channels 4  # Listen to 4 nearest agents
   @smell_channels 3    # Food, prey, threat densities
+  @vision_channels 24  # 8 rays × 3 types (food, agent, wall)
 
   @doc """
   Create a new random neural network for an agent.
@@ -56,7 +57,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
   @doc """
   Build input vector from agent state, vision data, hearing data, and smell data.
 
-  Vision data: list of 8 floats (0-1) - distance to nearest object in each direction.
+  Vision data: list of 24 floats (0-1) - 8 rays × 3 channels (food, agent, wall).
   Hearing data: list of 4 floats (0-1) - signals from 4 nearest agents.
   Smell data: list of 3 floats (0-1) - [food_density, prey_density, threat_density]
   """
@@ -64,7 +65,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
   def build_inputs(agent_state, vision_data, hearing_data \\ [0.0, 0.0, 0.0, 0.0], smell_data \\ [0.0, 0.0, 0.0])
 
   def build_inputs(agent_state, vision_data, hearing_data, smell_data)
-      when length(vision_data) == 8 and length(hearing_data) == @hearing_channels and length(smell_data) == @smell_channels do
+      when length(vision_data) == @vision_channels and length(hearing_data) == @hearing_channels and length(smell_data) == @smell_channels do
     %{energy: energy, age: age, direction: direction, signal: signal, generation: generation} = agent_state
 
     # Normalize inputs to 0-1 range
@@ -75,7 +76,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
     normalized_signal = signal || 0.0
     normalized_generation = min(generation / @max_generation, 1.0)
 
-    # Combine: vision (8) + hearing (4) + smell (3) + energy (1) + age (1) + direction (2) + signal (1) + generation (1) = 21
+    # Combine: vision (24) + hearing (4) + smell (3) + energy (1) + age (1) + direction (2) + signal (1) + generation (1) = 37
     vision_data ++ hearing_data ++ smell_data ++ [
       normalized_energy,
       normalized_age,
@@ -87,9 +88,17 @@ defmodule SwaiNode.Simulation.AgentBrain do
   end
 
   # Fallback for agents without signal field (backwards compatibility)
-  def build_inputs(agent_state, vision_data, hearing_data, smell_data) when length(vision_data) == 8 do
+  def build_inputs(agent_state, vision_data, hearing_data, smell_data) when length(vision_data) == @vision_channels do
     agent_with_signal = Map.merge(%{signal: 0.0, generation: 0}, agent_state)
     build_inputs(agent_with_signal, vision_data, hearing_data, smell_data)
+  end
+
+  # Legacy fallback for old 8-channel vision (backwards compatibility)
+  def build_inputs(agent_state, vision_data, hearing_data, smell_data) when length(vision_data) == 8 do
+    # Expand 8-channel vision to 24-channel by duplicating (food = agent = wall)
+    expanded_vision = vision_data ++ vision_data ++ vision_data
+    agent_with_signal = Map.merge(%{signal: 0.0, generation: 0}, agent_state)
+    build_inputs(agent_with_signal, expanded_vision, hearing_data, smell_data)
   end
 
   @doc """

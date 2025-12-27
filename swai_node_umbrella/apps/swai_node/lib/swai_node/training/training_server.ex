@@ -46,10 +46,10 @@ defmodule SwaiNode.Training.TrainingServer do
     selection_ratio: 0.20,
     mutation_rate: 0.10,
     mutation_strength: 0.3,
-    # Network: 21 inputs, 2 hidden layers, 6 outputs
-    # Inputs: 8 vision rays * 2 (distance, type) = 16 + 3 smell + 2 state = 21
-    # Outputs: move, turn, eat, reproduce, signal, attack
-    network_topology: {21, [28, 14], 6},
+    # Network: 37 inputs, 2 hidden layers, 6 outputs
+    # Inputs: 24 vision (8 rays × 3 channels) + 4 hearing + 3 smell + 6 state = 37
+    # Outputs: turn, move, eat, reproduce, signal, attack
+    network_topology: {37, [48, 24], 6},
     max_generations: 10000,
     # Evaluator options
     eval_ticks: 500,

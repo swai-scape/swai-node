@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500">
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#666"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="800" height="500" fill="#1a1a2e"/>
+
+  <!-- Domain Layer -->
+  <rect x="50" y="30" width="700" height="140" rx="8" fill="#2d2d44" stroke="#4a4a6a" stroke-width="2"/>
+  <text x="400" y="55" text-anchor="middle" fill="#a0a0c0" font-family="monospace" font-size="14" font-weight="bold">DOMAIN (swai-node)</text>
+
+  <!-- Domain components -->
+  <rect x="80" y="75" width="120" height="50" rx="4" fill="#3d5a3d" stroke="#5a8a5a"/>
+  <text x="140" y="105" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="11">Food/Vision</text>
+
+  <rect x="220" y="75" width="120" height="50" rx="4" fill="#5a3d3d" stroke="#8a5a5a"/>
+  <text x="280" y="105" text-anchor="middle" fill="#bc8f8f" font-family="monospace" font-size="11">Agents/Combat</text>
+
+  <rect x="360" y="75" width="120" height="50" rx="4" fill="#3d3d5a" stroke="#5a5a8a"/>
+  <text x="420" y="105" text-anchor="middle" fill="#8f8fbc" font-family="monospace" font-size="11">Physics/Move</text>
+
+  <rect x="500" y="75" width="120" height="50" rx="4" fill="#5a5a3d" stroke="#8a8a5a"/>
+  <text x="560" y="105" text-anchor="middle" fill="#bcbc8f" font-family="monospace" font-size="11">Energy/State</text>
+
+  <!-- Domain Bridge -->
+  <rect x="100" y="200" width="600" height="80" rx="8" fill="#4a3d5a" stroke="#8a5aaa" stroke-width="2"/>
+  <text x="400" y="225" text-anchor="middle" fill="#d0a0e0" font-family="monospace" font-size="14" font-weight="bold">DOMAIN BRIDGE</text>
+  <text x="400" y="250" text-anchor="middle" fill="#a080c0" font-family="monospace" font-size="10">sensor_spec() | actuator_spec() | reward_spec()</text>
+  <text x="400" y="265" text-anchor="middle" fill="#a080c0" font-family="monospace" font-size="10">read_sensors() | apply_actuators() | compute_rewards()</text>
+
+  <!-- Arrows from domain to bridge -->
+  <line x1="140" y1="125" x2="200" y2="200" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="280" y1="125" x2="300" y2="200" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="420" y1="125" x2="400" y2="200" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="560" y1="125" x2="500" y2="200" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- Arrow from bridge to neuroevolution -->
+  <line x1="400" y1="280" x2="400" y2="310" stroke="#666" stroke-width="3" marker-end="url(#arrowhead)"/>
+  <text x="480" y="300" fill="#888" font-family="monospace" font-size="10">Domain-agnostic</text>
+
+  <!-- Neuroevolution Layer -->
+  <rect x="50" y="320" width="700" height="150" rx="8" fill="#2d2d44" stroke="#4a4a6a" stroke-width="2"/>
+  <text x="400" y="345" text-anchor="middle" fill="#a0a0c0" font-family="monospace" font-size="14" font-weight="bold">macula-neuroevolution (Liquid Conglomerate)</text>
+
+  <!-- LC components -->
+  <rect x="80" y="365" width="100" height="45" rx="4" fill="#5a3d5a" stroke="#8a5a8a"/>
+  <text x="130" y="385" text-anchor="middle" fill="#bc8fbc" font-family="monospace" font-size="10">L2 Meta</text>
+  <text x="130" y="400" text-anchor="middle" fill="#9070a0" font-family="monospace" font-size="8">Architecture</text>
+
+  <rect x="200" y="365" width="100" height="45" rx="4" fill="#3d5a5a" stroke="#5a8a8a"/>
+  <text x="250" y="385" text-anchor="middle" fill="#8fbcbc" font-family="monospace" font-size="10">L1 Hyper</text>
+  <text x="250" y="400" text-anchor="middle" fill="#709090" font-family="monospace" font-size="8">Parameters</text>
+
+  <rect x="320" y="365" width="100" height="45" rx="4" fill="#3d3d5a" stroke="#5a5a8a"/>
+  <text x="370" y="385" text-anchor="middle" fill="#8f8fbc" font-family="monospace" font-size="10">L0 Indiv</text>
+  <text x="370" y="400" text-anchor="middle" fill="#707090" font-family="monospace" font-size="8">Weights</text>
+
+  <!-- Silos -->
+  <rect x="460" y="360" width="260" height="55" rx="4" fill="#3d4a3d" stroke="#5a6a5a"/>
+  <text x="590" y="380" text-anchor="middle" fill="#8fbc8f" font-family="monospace" font-size="10">Silos</text>
+  <text x="590" y="400" text-anchor="middle" fill="#708070" font-family="monospace" font-size="8">ecological | competitive | regulatory | ...</text>
+
+  <!-- Legend -->
+  <text x="80" y="445" fill="#888" font-family="monospace" font-size="9">Sensors: vision, smell, hearing, energy</text>
+  <text x="80" y="458" fill="#888" font-family="monospace" font-size="9">Actuators: turn, move, attack, signal</text>
+  <text x="400" y="445" fill="#888" font-family="monospace" font-size="9">Rewards: survival, food_eaten, kills</text>
+  <text x="400" y="458" fill="#888" font-family="monospace" font-size="9">Punishments: death, starvation</text>
+</svg>

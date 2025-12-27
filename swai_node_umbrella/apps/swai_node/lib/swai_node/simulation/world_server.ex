@@ -20,7 +20,8 @@ defmodule SwaiNode.Simulation.WorldServer do
   @topic "world:state"
 
   # Simulation constants - balanced for selection pressure
-  @move_cost 0.12  # ~830 ticks to starve - reasonable pressure
+  # TODO: Wire to ecological_silo for dynamic tuning
+  @move_cost 0.05  # ~2000 ticks to starve - more time to learn food-seeking
   @eat_range 18.0  # Must get close to eat - forces navigation
   @eat_gain 40.0   # Good reward for eating
   @max_energy 200.0

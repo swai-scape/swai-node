@@ -14,7 +14,8 @@ defmodule SwaiNode.Training.WorldEvaluator do
     selection_ratio: 0.20,
     mutation_rate: 0.10,
     mutation_strength: 0.3,
-    network_topology: {21, [28, 14], 6},
+    # 24 vision (8 rays × 3 channels) + 4 hearing + 3 smell + 6 state = 37 inputs
+    network_topology: {37, [48, 24], 6},
     evaluator_module: SwaiNode.Training.WorldEvaluator,
     evaluator_options: %{
       eval_ticks: 500,
