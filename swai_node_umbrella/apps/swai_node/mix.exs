@@ -50,7 +50,7 @@ defmodule SwaiNode.MixProject do
 
       # Neuroevolution Stack (from hex.pm)
       {:macula_tweann, "~> 0.18.0"},
-      {:macula_neuroevolution, "~> 0.25.0"},
+      {:macula_neuroevolution, "~> 0.27.0"},
 
       # CQRS/Event Sourcing (from hex.pm)
       # Note: erl_esdb already depends on erl_esdb_gater

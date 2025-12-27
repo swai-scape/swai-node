@@ -14,6 +14,7 @@ defmodule SwaiNode.Simulation.WorldServer do
   require Logger
 
   alias SwaiNode.Simulation.{AgentBrain, SiloIntegration, SpeciesTracker, Vision}
+  alias SwaiNode.Domain.DomainBridge
   alias SwaiNode.Worlds
 
   @pubsub SwaiNode.PubSub
@@ -295,6 +296,9 @@ defmodule SwaiNode.Simulation.WorldServer do
       Logger.info("[WorldServer] task_silo adjusted mutation_rate: #{Float.round(mutation_rate, 3)}")
     end
 
+    # Emit domain signals to silos
+    emit_domain_signals(state, best_fitness)
+
     # Update config with new parameters
     updated_config = %{state.config |
       mutation_rate: mutation_rate,
@@ -306,6 +310,36 @@ defmodule SwaiNode.Simulation.WorldServer do
       prev_best_fitness: best_fitness,
       silo_update_tick: state.tick
     }
+  end
+
+  # Emit domain signals to macula-neuroevolution silos
+  defp emit_domain_signals(state, best_fitness) do
+    # Build world state map for DomainBridge
+    world_state = %{
+      agents: state.agents,
+      food: state.food,
+      config: state.config,
+      stats: state.stats
+    }
+
+    # Build metrics for stagnation detection
+    metrics = %{
+      prev_best_fitness: state.prev_best_fitness,
+      best_fitness: best_fitness
+    }
+
+    # Emit signals via DomainBridge
+    signals = DomainBridge.emit_signals(world_state, metrics)
+
+    # Route to silos (if signal_router is available)
+    try do
+      :signal_router.route(signals)
+    rescue
+      # signal_router may not be running in all environments
+      _error -> :ok
+    catch
+      :exit, _ -> :ok
+    end
   end
 
   # Update species every 200 ticks (less frequent than silo)
