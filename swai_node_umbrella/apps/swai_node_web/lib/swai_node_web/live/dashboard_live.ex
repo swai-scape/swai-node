@@ -407,6 +407,9 @@ defmodule SwaiNodeWeb.DashboardLive do
       total_births: broadcast_stats[:births] || existing_stats[:total_births] || 0,
       total_deaths: broadcast_stats[:deaths] || existing_stats[:total_deaths] || 0,
       total_kills: broadcast_stats[:kills] || existing_stats[:total_kills] || 0,
+      total_encounters: broadcast_stats[:encounters] || existing_stats[:total_encounters] || 0,
+      total_peaceful_encounters: broadcast_stats[:peaceful_encounters] || existing_stats[:total_peaceful_encounters] || 0,
+      total_diplomatic_successes: broadcast_stats[:diplomatic_successes] || existing_stats[:total_diplomatic_successes] || 0,
       food_count: length(world_state[:food] || [])
     }
   end
@@ -511,6 +514,14 @@ defmodule SwaiNodeWeb.DashboardLive do
               <div class="flex items-center gap-1">
                 <span class="text-gray-500">Kills</span>
                 <span class="font-mono text-red-400">{@world_stats.total_kills}</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <span class="text-gray-500">Peace</span>
+                <span class="font-mono text-green-400">{@world_stats[:total_peaceful_encounters] || 0}</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <span class="text-gray-500">Diplo</span>
+                <span class="font-mono text-blue-400">{@world_stats[:total_diplomatic_successes] || 0}</span>
               </div>
             </div>
 

@@ -230,7 +230,13 @@ defmodule SwaiNode.Simulation.WorldServer do
       total_deaths: state.stats.deaths,
       total_food_eaten: state.stats.food_eaten,
       total_attacks: state.stats.attacks,
-      total_kills: state.stats.kills
+      total_kills: state.stats.kills,
+      # Social/diplomacy stats
+      total_encounters: state.stats.encounters,
+      total_peaceful_encounters: state.stats.peaceful_encounters,
+      total_diplomatic_successes: state.stats.diplomatic_successes,
+      cooperation_rate: if(state.stats.encounters > 0, do: state.stats.peaceful_encounters / state.stats.encounters, else: 0.0),
+      diplomacy_rate: if(state.stats.peaceful_encounters > 0, do: state.stats.diplomatic_successes / state.stats.peaceful_encounters, else: 0.0)
     }
 
     {:reply, stats, state}
@@ -851,6 +857,9 @@ defmodule SwaiNode.Simulation.WorldServer do
           food_eaten: state.stats.food_eaten,
           attacks: state.stats.attacks,
           kills: state.stats.kills,
+          encounters: state.stats.encounters,
+          peaceful_encounters: state.stats.peaceful_encounters,
+          diplomatic_successes: state.stats.diplomatic_successes,
           best_fitness: best_fit,
           avg_fitness: avg_fit
         },
