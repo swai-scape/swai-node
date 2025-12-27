@@ -110,7 +110,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
   def parse_outputs([turn, move, eat, reproduce, signal, attack]) do
     %{
       turn: turn,
-      move: max(0.0, move),
+      move: (move + 1.0) / 2.0,  # Map -1..1 to 0..1 - always some movement
       eat: eat > 0.5,
       reproduce: reproduce > 0.5,
       signal: (signal + 1.0) / 2.0,  # Convert from -1..1 to 0..1
@@ -127,7 +127,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
   def parse_outputs([turn, move, eat, reproduce, signal]) do
     %{
       turn: turn,
-      move: max(0.0, move),
+      move: (move + 1.0) / 2.0,
       eat: eat > 0.5,
       reproduce: reproduce > 0.5,
       signal: (signal + 1.0) / 2.0,
@@ -139,7 +139,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
   def parse_outputs([turn, move, eat, reproduce]) do
     %{
       turn: turn,
-      move: max(0.0, move),
+      move: (move + 1.0) / 2.0,
       eat: eat > 0.5,
       reproduce: reproduce > 0.5,
       signal: 0.5,
