@@ -114,7 +114,7 @@ defmodule SwaiNode.Simulation.AgentBrain do
       eat: eat > 0.5,
       reproduce: reproduce > 0.5,
       signal: (signal + 1.0) / 2.0,  # Convert from -1..1 to 0..1
-      attack: attack > 0.0  # Attack if positive (tanh output > 0)
+      attack: attack > 0.7  # High threshold - must "really want" to attack
     }
   end
 
