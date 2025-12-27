@@ -101,7 +101,7 @@ macula-neuroevolution/src/
 │   ├── genetic.erl                   %%   Genetic operators (mutation, crossover)
 │   └── events.erl                    %%   Evolution events
 │
-├── evolve/strategies/                %% WHAT: Different evolution paradigms
+├── strategies/                       %% WHAT: Different evolution paradigms (top-level)
 │   ├── strategy.erl                  %%   Behaviour definition
 │   ├── generational.erl              %%   Traditional (μ,λ) evolution
 │   ├── steady_state.erl              %%   Continuous replacement
@@ -241,9 +241,9 @@ macula-neuroevolution/src/
 | `meta_*.erl` | `meta/` folder | Group meta-learning |
 | `checkpoint_manager.erl` | `persist/checkpoint_manager.erl` | Clear purpose |
 
-### 2. strategies/ → evolve/strategies/
+### 2. strategies/ stays top-level
 
-Strategies are part of evolution, not a separate top-level concern.
+Strategies remain as a top-level folder. Move `coevolution/` under it.
 
 ### 3. liquid_conglomerate/ → silos/
 
@@ -316,12 +316,12 @@ Add the domain bridge behaviours we designed.
 
 ---
 
-## Open Questions
+## Decisions
 
-1. Should `evolve/` be renamed to something more specific like `evolution/` or `neuroevolve/`?
-2. Should strategies be nested under `evolve/` or remain top-level?
-3. Should we keep the `_silo` suffix on silo modules, or let the folder provide context?
-4. How to handle backwards compatibility for existing users of the library?
+1. **`evolve/` naming**: Keep as `evolve/` - clear and concise
+2. **strategies/ location**: Keep top-level, not nested under `evolve/`
+3. **`_silo` suffix**: Keep the suffix on silo modules for clarity
+4. **Backwards compatibility**: Not a concern - still in development, no guarantees
 
 ---
 
