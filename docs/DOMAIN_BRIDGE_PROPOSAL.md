@@ -22,11 +22,49 @@ The vision fix I made (food/agent/wall channels) is domain-specific knowledge th
 
 ---
 
+## Module Locations (Dependency Inversion)
+
+Following clean/inverted architecture, **behaviours are defined in inner modules** (the library) while **implementations live in outer modules** (the domain application).
+
+### Behaviours (macula-neuroevolution)
+
+These define what the library expects from any domain:
+
+```
+macula-neuroevolution/
+└── src/
+    └── domain_bridge/
+        ├── domain_sensors.erl       %% Behaviour: what sensors does the domain provide?
+        ├── domain_actuators.erl     %% Behaviour: what actuators does the domain accept?
+        └── domain_rewards.erl       %% Behaviour: what reward signals does the domain emit?
+```
+
+### Implementations (swai-node or any domain application)
+
+These fulfill the contracts defined by the library:
+
+```
+swai-node/
+└── lib/swai_node/
+    └── neuroevolution/
+        └── domain_bridge.ex         %% Implements :domain_sensors, :domain_actuators, :domain_rewards
+```
+
+This ensures:
+- **macula-neuroevolution** has no knowledge of food, agents, walls, or any domain concept
+- **swai-node** depends on macula-neuroevolution, not the other way around
+- New domains only need to implement the bridge behaviours
+
+---
+
 ## Proposed Behaviours
+
+> **Location:** `macula-neuroevolution/src/domain_bridge/`
 
 ### 1. Domain Sensor Provider
 
 ```erlang
+%% File: macula-neuroevolution/src/domain_bridge/domain_sensors.erl
 -module(domain_sensors).
 -callback sensor_spec() -> [sensor_definition()].
 -callback read_sensors(DomainState :: term()) -> sensor_readings().
@@ -46,6 +84,7 @@ The vision fix I made (food/agent/wall channels) is domain-specific knowledge th
 ### 2. Domain Actuator Consumer
 
 ```erlang
+%% File: macula-neuroevolution/src/domain_bridge/domain_actuators.erl
 -module(domain_actuators).
 -callback actuator_spec() -> [actuator_definition()].
 -callback apply_actuators(actuator_outputs(), DomainState) -> NewDomainState.
@@ -65,6 +104,7 @@ The vision fix I made (food/agent/wall channels) is domain-specific knowledge th
 ### 3. Domain Reward Provider
 
 ```erlang
+%% File: macula-neuroevolution/src/domain_bridge/domain_rewards.erl
 -module(domain_rewards).
 -callback reward_spec() -> [reward_definition()].
 -callback compute_rewards(DomainState, Metrics) -> reward_signals().
@@ -198,16 +238,23 @@ Each silo can subscribe to domain signals based on **category**:
 
 ### Silo-Specific Behaviours
 
+> **Location:** Both behaviours AND implementations live in `macula-neuroevolution/`
+>
+> Unlike domain behaviours (which domains implement), silo behaviours are internal to the library.
+> Each silo (ecological_silo, morphological_silo, etc.) implements these behaviours.
+
 ```erlang
-%% Each silo implements these for its category
+%% File: macula-neuroevolution/src/silo_integration/silo_sensor_consumer.erl
 -behaviour(silo_sensor_consumer).
 -callback relevant_sensors() -> [atom()].  %% Which sensors this silo cares about
 -callback process_sensors(SensorReadings) -> SiloState.
 
+%% File: macula-neuroevolution/src/silo_integration/silo_actuator_producer.erl
 -behaviour(silo_actuator_producer).
 -callback relevant_actuators() -> [atom()].
 -callback compute_actuators(SiloState) -> ActuatorOutputs.
 
+%% File: macula-neuroevolution/src/silo_integration/silo_reward_consumer.erl
 -behaviour(silo_reward_consumer).
 -callback relevant_rewards() -> [atom()].
 -callback process_rewards(RewardSignals, SiloState) -> NewSiloState.
@@ -217,7 +264,13 @@ Each silo can subscribe to domain signals based on **category**:
 
 ## Example: SwaiNode Domain Bridge
 
+> **Location:** `swai-node/lib/swai_node/neuroevolution/domain_bridge.ex`
+>
+> This is a **domain implementation** that fulfills the behaviours defined in macula-neuroevolution.
+> The library calls these functions - it never knows about "food" or "vision".
+
 ```elixir
+# File: swai-node/lib/swai_node/neuroevolution/domain_bridge.ex
 defmodule SwaiNode.DomainBridge do
   @behaviour :domain_sensors
   @behaviour :domain_actuators

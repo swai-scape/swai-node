@@ -13,11 +13,56 @@ Each silo in LC has a specific responsibility. When domain signals arrive, they 
 
 ---
 
+## Module Locations (Dependency Inversion)
+
+All silo-related behaviours and implementations live **within macula-neuroevolution** because silos are part of the library, not the domain.
+
+### Behaviours (macula-neuroevolution)
+
+```
+macula-neuroevolution/
+└── src/
+    └── silo_integration/
+        ├── silo_sensors.erl        %% Behaviour: how silos consume domain sensor signals
+        ├── silo_actuators.erl      %% Behaviour: how silos produce actuator outputs
+        ├── silo_rewards.erl        %% Behaviour: how silos process reward signals
+        └── silo_punishments.erl    %% Behaviour: how silos process punishment signals
+```
+
+### Implementations (also macula-neuroevolution)
+
+Each existing silo implements these behaviours:
+
+```
+macula-neuroevolution/
+└── src/
+    └── silos/
+        ├── ecological_silo.erl     %% Implements silo_sensors, silo_actuators, silo_rewards
+        ├── competitive_silo.erl    %% Implements silo_sensors, silo_actuators, silo_rewards
+        ├── regulatory_silo.erl     %% Implements silo_sensors, silo_rewards
+        ├── morphological_silo.erl  %% Implements silo_actuators (topology changes)
+        └── task_silo.erl           %% Implements silo_actuators (hyperparameters)
+```
+
+### Signal Router (macula-neuroevolution)
+
+```
+macula-neuroevolution/
+└── src/
+    └── domain_bridge/
+        └── signal_router.erl       %% Routes domain signals to appropriate silos by category
+```
+
+---
+
 ## Proposed Silo Behaviours
+
+> **Location:** `macula-neuroevolution/src/silo_integration/`
 
 ### SiloSensors - Consume Domain Signals
 
 ```erlang
+%% File: macula-neuroevolution/src/silo_integration/silo_sensors.erl
 -module(silo_sensors).
 
 %% Which sensor categories this silo processes
@@ -36,6 +81,7 @@ Each silo in LC has a specific responsibility. When domain signals arrive, they 
 ### SiloActuators - Produce Domain Modifications
 
 ```erlang
+%% File: macula-neuroevolution/src/silo_integration/silo_actuators.erl
 -module(silo_actuators).
 
 %% Which actuator categories this silo controls
@@ -59,6 +105,7 @@ Each silo in LC has a specific responsibility. When domain signals arrive, they 
 ### SiloRewards - Process Reward Signals
 
 ```erlang
+%% File: macula-neuroevolution/src/silo_integration/silo_rewards.erl
 -module(silo_rewards).
 
 %% Which reward categories this silo uses for its own learning
@@ -79,6 +126,7 @@ Each silo in LC has a specific responsibility. When domain signals arrive, they 
 ### SiloPunishments - Process Negative Signals
 
 ```erlang
+%% File: macula-neuroevolution/src/silo_integration/silo_punishments.erl
 -module(silo_punishments).
 
 %% Which punishment categories affect this silo
@@ -218,25 +266,41 @@ Plateau Detected / Major Event
 
 ## Implementation in macula-neuroevolution
 
-### New Files
+### Complete File Structure
 
 ```
-src/liquid_conglomerate/
-├── domain_bridge/
-│   ├── domain_sensors.erl      %% Behaviour
-│   ├── domain_actuators.erl    %% Behaviour
-│   ├── domain_rewards.erl      %% Behaviour
-│   └── signal_router.erl       %% Routes signals to silos
-├── silo_integration/
-│   ├── silo_sensors.erl        %% Behaviour
-│   ├── silo_actuators.erl      %% Behaviour
-│   ├── silo_rewards.erl        %% Behaviour
-│   └── silo_punishments.erl    %% Behaviour
+macula-neuroevolution/src/
+├── domain_bridge/                        %% Domain ↔ Library boundary
+│   ├── domain_sensors.erl                %% BEHAVIOUR: domains implement this
+│   ├── domain_actuators.erl              %% BEHAVIOUR: domains implement this
+│   ├── domain_rewards.erl                %% BEHAVIOUR: domains implement this
+│   └── signal_router.erl                 %% Routes signals to silos by category
+│
+├── silo_integration/                     %% Silo ↔ Domain Bridge boundary
+│   ├── silo_sensors.erl                  %% BEHAVIOUR: silos implement this
+│   ├── silo_actuators.erl                %% BEHAVIOUR: silos implement this
+│   ├── silo_rewards.erl                  %% BEHAVIOUR: silos implement this
+│   └── silo_punishments.erl              %% BEHAVIOUR: silos implement this
+│
+└── silos/                                %% Silo implementations
+    ├── ecological_silo.erl               %% -behaviour(silo_sensors, silo_actuators, silo_rewards)
+    ├── competitive_silo.erl              %% -behaviour(silo_sensors, silo_actuators, silo_rewards)
+    ├── regulatory_silo.erl               %% -behaviour(silo_sensors, silo_rewards)
+    ├── morphological_silo.erl            %% -behaviour(silo_actuators)
+    └── task_silo.erl                     %% -behaviour(silo_actuators)
+```
+
+**Domain application (e.g., swai-node):**
+```
+swai-node/lib/swai_node/
+└── neuroevolution/
+    └── domain_bridge.ex                  %% -behaviour(:domain_sensors, :domain_actuators, :domain_rewards)
 ```
 
 ### Updated neuroevolution_server
 
 ```erlang
+%% File: macula-neuroevolution/src/neuroevolution_server.erl
 init(Config) ->
     %% Get domain bridge module
     Bridge = maps:get(domain_bridge, Config),
@@ -266,7 +330,7 @@ init(Config) ->
 When multiple silos want to control the same actuator category:
 
 ```erlang
-%% signal_router.erl
+%% File: macula-neuroevolution/src/domain_bridge/signal_router.erl
 resolve_actuator_conflicts(ActuatorOutputs) ->
     %% Group by actuator name
     Grouped = group_by_name(ActuatorOutputs),
