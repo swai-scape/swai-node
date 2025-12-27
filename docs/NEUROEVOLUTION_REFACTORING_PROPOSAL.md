@@ -1,14 +1,15 @@
 # Screaming Architecture Refactoring for macula-neuroevolution
 
 **Date:** 2025-12-27
-**Status:** Proposal
+**Status:** Complete
+**Commit:** `3e17ee7`
 **Context:** Applying vertical slicing and screaming architecture principles
 
 ---
 
-## Current Structure Analysis
+## Previous Structure Analysis
 
-### What's Good (Already Vertical)
+### What Was Good (Already Vertical)
 
 The `liquid_conglomerate/` silos are **already well-organized**:
 
@@ -22,7 +23,7 @@ liquid_conglomerate/
 └── ... (13 silos total)
 ```
 
-### What's Bad (Horizontal/Chaotic)
+### What Was Bad (Horizontal/Chaotic)
 
 **Root level chaos** - ~20 files with mixed concerns:
 
@@ -79,7 +80,7 @@ liquid_conglomerate/
 
 ---
 
-## Proposed Screaming Architecture
+## Implemented Screaming Architecture
 
 ### Design Principle
 
@@ -87,7 +88,7 @@ liquid_conglomerate/
 
 Not: "What type of thing IS this?"
 
-### New Structure
+### Implemented Structure
 
 ```
 macula-neuroevolution/src/
@@ -325,10 +326,10 @@ Add the domain bridge behaviours we designed.
 
 ---
 
-## Next Steps
+## Completed Steps
 
-1. [ ] Review and approve this proposal
-2. [ ] Create migration script
-3. [ ] Execute migration in macula-neuroevolution
-4. [ ] Update documentation
-5. [ ] Release new version with deprecation warnings for old paths
+1. [x] Review and approve this proposal
+2. [x] Execute migration in macula-neuroevolution (commit `3e17ee7`)
+3. [x] Compile and test verification passed
+4. [ ] Update documentation (guides may reference old paths)
+5. [ ] Release new version
