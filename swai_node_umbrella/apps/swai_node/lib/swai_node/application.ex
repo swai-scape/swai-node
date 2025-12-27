@@ -17,7 +17,9 @@ defmodule SwaiNode.Application do
       SwaiNode.MeshClient,
       # LC event bridge (silo events → Phoenix.PubSub)
       SwaiNode.Simulation.LCEventBridge,
-      # World simulation server
+      # Training server (neuroevolution via macula-neuroevolution)
+      SwaiNode.Training.TrainingServer,
+      # World simulation server (for visualization)
       SwaiNode.Simulation.WorldServer
     ]
 
