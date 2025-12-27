@@ -1,0 +1,75 @@
+# Swai Node - Docker Compose for Development
+#
+# Usage:
+#   # Build and start
+#   DOCKER_BUILDKIT=1 docker compose -f docker/docker-compose.yml up --build
+#
+#   # With GitHub token for private repos
+#   GITHUB_TOKEN=$(cat ~/.github_token) docker compose -f docker/docker-compose.yml up --build
+#
+#   # Development with source mounting
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up
+
+services:
+  swai-node:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        - CACHE_BUST=${CACHE_BUST:-0}
+      secrets:
+        - github_token
+    image: swai-node:latest
+    container_name: swai-node
+    ports:
+      - "4000:4000"      # Phoenix web server
+      - "9443:9443/udp"  # QUIC mesh port
+    environment:
+      - PORT=4000
+      - SECRET_KEY_BASE=${SECRET_KEY_BASE:-dev_secret_key_base_that_is_at_least_64_bytes_long_for_development}
+      - DATABASE_PATH=/data/sqlite/swai_node.db
+      - ESDB_DATA_DIR=/data/esdb
+      # Macula mesh configuration
+      - MACULA_BOOTSTRAP_NODES=${MACULA_BOOTSTRAP_NODES:-swai-portal:9443}
+      - MACULA_REALM=${MACULA_REALM:-swai.dev}
+      - MACULA_NODE_ID=${MACULA_NODE_ID:-}
+      - MACULA_TLS_MODE=${MACULA_TLS_MODE:-development}
+    volumes:
+      - swai-data:/data
+    networks:
+      - swai-mesh
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Optional: Local swai-portal bootstrap node for development
+  swai-portal:
+    image: swai-portal:latest
+    container_name: swai-portal
+    ports:
+      - "4100:4000"       # Portal web UI
+      - "9443:9443/udp"   # Bootstrap QUIC port
+    environment:
+      - PORT=4000
+      - MACULA_MODE=bootstrap
+      - MACULA_TLS_MODE=development
+    networks:
+      - swai-mesh
+    profiles:
+      - with-portal  # Only start when explicitly requested
+
+volumes:
+  swai-data:
+    driver: local
+
+networks:
+  swai-mesh:
+    driver: bridge
+
+secrets:
+  github_token:
+    environment: "GITHUB_TOKEN"

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Start script: runs migrations then starts server
+# This is the Docker entrypoint
+
+cd -P -- "$(dirname -- "$0")"
+
+echo "Running migrations..."
+./migrate
+
+echo "Starting SwaiNode..."
+./server

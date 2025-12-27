@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+cd -P -- "$(dirname -- "$0")"
+exec ./swai_node eval SwaiNodeWeb.Release.migrate
