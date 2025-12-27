@@ -722,6 +722,9 @@ defmodule SwaiNode.Simulation.WorldServer do
       species_stats = SpeciesTracker.get_species_stats(state.species_info)
       diversity = SpeciesTracker.diversity_index(state.species_info)
 
+      # Calculate behavioral types
+      behavioral_types = calculate_behavioral_types(agents_list)
+
       render_state = %{
         agents: Enum.map(agents_list, &agent_to_render/1),
         food: state.food,
@@ -742,11 +745,26 @@ defmodule SwaiNode.Simulation.WorldServer do
         },
         # Species info
         species: species_stats,
-        diversity: diversity
+        diversity: diversity,
+        # Behavioral types (herbivore/omnivore/carnivore)
+        behavioral_types: behavioral_types
       }
 
       Phoenix.PubSub.broadcast(@pubsub, @topic, {:world_update, render_state})
     end
+  end
+
+  defp calculate_behavioral_types(agents) do
+    Enum.reduce(agents, %{herbivore: 0, omnivore: 0, carnivore: 0}, fn agent, acc ->
+      kills = Map.get(agent, :kills, 0)
+      food_eaten = Map.get(agent, :food_eaten, 0)
+
+      cond do
+        kills == 0 -> %{acc | herbivore: acc.herbivore + 1}
+        kills > food_eaten -> %{acc | carnivore: acc.carnivore + 1}
+        true -> %{acc | omnivore: acc.omnivore + 1}
+      end
+    end)
   end
 
   defp calculate_fitness_stats([]), do: {0.0, 0.0}
