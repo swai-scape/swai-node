@@ -4,12 +4,20 @@
  * Renders agents and food on a canvas element with rich visual differentiation.
  * Shows generation (hue), fitness (size), and signal (glow).
  * Supports event highlighting for evolution milestones.
+ * Includes optional audio sonification of agent signals.
  */
 
 const BASE_AGENT_RADIUS = 4;
 const MAX_AGENT_RADIUS = 8;
 const FOOD_RADIUS = 3;
 const EVENT_DURATION_MS = 3000;  // Events fade over 3 seconds
+
+// Audio constants
+const SIGNAL_THRESHOLD = 0.7;  // Only sonify high signals
+const MAX_SIMULTANEOUS_SOUNDS = 6;  // Limit concurrent sounds
+const NOTE_DURATION = 0.15;  // Short blip in seconds
+const BASE_FREQ = 220;  // A3
+const FREQ_RANGE = 440;  // Up to A5
 
 export const WorldCanvas = {
   mounted() {
@@ -28,10 +36,17 @@ export const WorldCanvas = {
     this.events = [];  // Active visual events
     this.championId = null;  // Current champion agent ID
 
+    // Audio state
+    this.audioCtx = null;
+    this.audioEnabled = false;
+    this.activeSounds = 0;
+    this.lastSoundTime = {};  // Track per-agent cooldown
+
     // Handle world updates from server
     this.handleEvent("world_update", (payload) => {
       this.agents = payload.agents || [];
       this.food = payload.food || [];
+      this.sonifySignals();  // Play sounds for high-signal agents
       this.render();
     });
 
@@ -53,8 +68,106 @@ export const WorldCanvas = {
       this.render();
     });
 
+    // Handle audio toggle from LiveView
+    this.handleEvent("toggle_audio", (payload) => {
+      this.audioEnabled = payload.enabled;
+      if (this.audioEnabled && !this.audioCtx) {
+        this.initAudio();
+      }
+    });
+
     // Initial render
     this.render();
+  },
+
+  // Initialize Web Audio API
+  initAudio() {
+    try {
+      this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      // Create master gain for volume control
+      this.masterGain = this.audioCtx.createGain();
+      this.masterGain.gain.value = 0.3;  // 30% volume
+      this.masterGain.connect(this.audioCtx.destination);
+    } catch (e) {
+      console.warn('Web Audio API not supported:', e);
+      this.audioEnabled = false;
+    }
+  },
+
+  // Sonify agent signals - play tones for high-signal agents
+  sonifySignals() {
+    if (!this.audioEnabled || !this.audioCtx) return;
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume();
+    }
+
+    const now = Date.now();
+    const maxGen = Math.max(1, ...this.agents.map(a => a.generation || 0));
+
+    // Find agents with high signals
+    const signalingAgents = this.agents
+      .filter(a => (a.signal || 0) > SIGNAL_THRESHOLD)
+      .filter(a => {
+        // Cooldown: don't repeat same agent within 200ms
+        const lastTime = this.lastSoundTime[a.id] || 0;
+        return (now - lastTime) > 200;
+      })
+      .slice(0, MAX_SIMULTANEOUS_SOUNDS - this.activeSounds);
+
+    signalingAgents.forEach(agent => {
+      this.playSignalTone(agent, maxGen);
+      this.lastSoundTime[agent.id] = now;
+    });
+  },
+
+  // Play a single signal tone for an agent
+  playSignalTone(agent, maxGen) {
+    if (this.activeSounds >= MAX_SIMULTANEOUS_SOUNDS) return;
+
+    const ctx = this.audioCtx;
+    const now = ctx.currentTime;
+
+    // Frequency based on generation (older = higher pitch)
+    const genRatio = (agent.generation || 0) / maxGen;
+    const freq = BASE_FREQ + (genRatio * FREQ_RANGE);
+
+    // Pan based on X position (-1 = left, 1 = right)
+    const pan = ((agent.x / this.width) * 2) - 1;
+
+    // Volume based on signal strength
+    const volume = Math.min(0.5, (agent.signal - SIGNAL_THRESHOLD) * 2);
+
+    // Create oscillator
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, now);
+
+    // Create gain envelope (quick attack, decay)
+    const gainNode = ctx.createGain();
+    gainNode.gain.setValueAtTime(0, now);
+    gainNode.gain.linearRampToValueAtTime(volume, now + 0.01);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + NOTE_DURATION);
+
+    // Create stereo panner
+    const panner = ctx.createStereoPanner();
+    panner.pan.setValueAtTime(pan, now);
+
+    // Connect: osc -> gain -> panner -> master
+    osc.connect(gainNode);
+    gainNode.connect(panner);
+    panner.connect(this.masterGain);
+
+    // Start and stop
+    this.activeSounds++;
+    osc.start(now);
+    osc.stop(now + NOTE_DURATION);
+
+    osc.onended = () => {
+      this.activeSounds--;
+      osc.disconnect();
+      gainNode.disconnect();
+      panner.disconnect();
+    };
   },
 
   updated() {
