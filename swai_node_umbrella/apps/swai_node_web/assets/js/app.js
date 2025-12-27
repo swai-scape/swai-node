@@ -27,10 +27,12 @@ import topbar from "../vendor/topbar"
 
 // Custom hooks
 import {WorldCanvas} from "./hooks/world_canvas"
+import {EChartsHook} from "./hooks/echarts_hook"
 
 const Hooks = {
   ...colocatedHooks,
-  WorldCanvas
+  WorldCanvas,
+  EChartsHook
 }
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

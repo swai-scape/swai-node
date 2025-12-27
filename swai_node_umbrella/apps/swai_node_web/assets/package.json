@@ -1,0 +1,8 @@
+{
+  "name": "swai-node-assets",
+  "version": "1.0.0",
+  "description": "Assets for SwaiNode dashboard",
+  "dependencies": {
+    "echarts": "^5.5.1"
+  }
+}

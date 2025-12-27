@@ -3,11 +3,13 @@
  *
  * Renders agents and food on a canvas element with rich visual differentiation.
  * Shows generation (hue), fitness (size), and signal (glow).
+ * Supports event highlighting for evolution milestones.
  */
 
 const BASE_AGENT_RADIUS = 4;
 const MAX_AGENT_RADIUS = 8;
 const FOOD_RADIUS = 3;
+const EVENT_DURATION_MS = 3000;  // Events fade over 3 seconds
 
 export const WorldCanvas = {
   mounted() {
@@ -23,11 +25,31 @@ export const WorldCanvas = {
     // Initialize empty state
     this.agents = [];
     this.food = [];
+    this.events = [];  // Active visual events
+    this.championId = null;  // Current champion agent ID
 
     // Handle world updates from server
     this.handleEvent("world_update", (payload) => {
       this.agents = payload.agents || [];
       this.food = payload.food || [];
+      this.render();
+    });
+
+    // Handle evolution events for visual highlighting
+    this.handleEvent("evolution_event", (payload) => {
+      const now = Date.now();
+      this.events.push({
+        type: payload.type,
+        data: payload.data || {},
+        startTime: now,
+        endTime: now + EVENT_DURATION_MS
+      });
+
+      // Track champion
+      if (payload.type === 'champion' && payload.data?.agent_id) {
+        this.championId = payload.data.agent_id;
+      }
+
       this.render();
     });
 
@@ -43,6 +65,10 @@ export const WorldCanvas = {
     const ctx = this.ctx;
     const width = this.width;
     const height = this.height;
+    const now = Date.now();
+
+    // Clean up expired events
+    this.events = this.events.filter(e => e.endTime > now);
 
     // Clear canvas with dark background
     ctx.fillStyle = '#0f0f1a';
@@ -89,7 +115,10 @@ export const WorldCanvas = {
 
     // Draw agents with rich visual differentiation
     this.agents.forEach(agent => {
-      const { x, y, direction, energy, fitness, generation, signal, wants_attack, kills } = agent;
+      const { x, y, direction, energy, fitness, generation, signal, wants_attack, kills, id } = agent;
+
+      // Check if this is the champion
+      const isChampion = this.championId && id === this.championId;
 
       // Generation determines HUE (purple -> cyan -> green -> yellow -> orange)
       // This creates visual "species" based on evolutionary age
@@ -105,6 +134,21 @@ export const WorldCanvas = {
       // Fitness determines SIZE
       const fitnessRatio = Math.min((fitness || 0) / maxFitness, 1);
       const radius = BASE_AGENT_RADIUS + (fitnessRatio * (MAX_AGENT_RADIUS - BASE_AGENT_RADIUS));
+
+      // Champion gets a pulsing golden aura
+      if (isChampion) {
+        const pulsePhase = (now % 1000) / 1000;
+        const pulseSize = 1 + Math.sin(pulsePhase * Math.PI * 2) * 0.3;
+        const auraRadius = radius * 3 * pulseSize;
+        const gradient = ctx.createRadialGradient(x, y, radius, x, y, auraRadius);
+        gradient.addColorStop(0, 'rgba(255, 215, 0, 0.6)');
+        gradient.addColorStop(0.5, 'rgba(255, 180, 0, 0.3)');
+        gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(x, y, auraRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Draw attack glow (red pulsing) if wanting to attack
       if (wants_attack) {
@@ -149,8 +193,14 @@ export const WorldCanvas = {
       ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
 
-      // Draw border for champions (top fitness)
-      if (fitnessRatio > 0.8) {
+      // Draw border for champions (top fitness) or the tracked champion
+      if (isChampion) {
+        ctx.strokeStyle = 'rgba(255, 215, 0, 1)'; // bright gold
+        ctx.lineWidth = 3;
+        ctx.stroke();
+        // Draw crown icon above champion
+        this.drawCrown(ctx, x, y - radius - 8);
+      } else if (fitnessRatio > 0.8) {
         ctx.strokeStyle = 'rgba(255, 215, 0, 0.8)'; // gold
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -193,5 +243,82 @@ export const WorldCanvas = {
       ctx.fillStyle = 'rgba(255, 100, 100, 0.8)';
       ctx.fillText(`Hunters: ${hunters} | Attacking: ${attacking}`, 8, 58);
     }
+
+    // Draw event overlays
+    this.drawEventOverlays(ctx, width, height, now);
+  },
+
+  // Draw a small crown icon
+  drawCrown(ctx, x, y) {
+    const size = 6;
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    // Crown base
+    ctx.moveTo(x - size, y + size/2);
+    ctx.lineTo(x - size, y);
+    ctx.lineTo(x - size/2, y + size/3);
+    ctx.lineTo(x, y - size/2);
+    ctx.lineTo(x + size/2, y + size/3);
+    ctx.lineTo(x + size, y);
+    ctx.lineTo(x + size, y + size/2);
+    ctx.closePath();
+    ctx.fill();
+    // Crown jewels
+    ctx.fillStyle = '#ff4444';
+    ctx.beginPath();
+    ctx.arc(x, y - size/4, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  // Draw event notification overlays
+  drawEventOverlays(ctx, width, height, now) {
+    if (this.events.length === 0) return;
+
+    let yOffset = height - 30;
+
+    this.events.forEach(event => {
+      const elapsed = now - event.startTime;
+      const duration = event.endTime - event.startTime;
+      const progress = elapsed / duration;
+      const alpha = Math.max(0, 1 - progress);
+
+      let text = '';
+      let color = 'rgba(255, 255, 255, ' + alpha + ')';
+      let bgColor = 'rgba(0, 0, 0, 0.6)';
+
+      switch (event.type) {
+        case 'champion':
+          text = `🏆 New Champion! Fitness: ${Math.round(event.data.fitness || 0)}`;
+          color = `rgba(255, 215, 0, ${alpha})`;
+          bgColor = `rgba(50, 40, 0, ${alpha * 0.8})`;
+          break;
+        case 'speciation':
+          text = `🧬 New Species Emerged!`;
+          color = `rgba(138, 43, 226, ${alpha})`;
+          bgColor = `rgba(30, 10, 50, ${alpha * 0.8})`;
+          break;
+        case 'extinction':
+          text = `💀 Species Extinct`;
+          color = `rgba(255, 100, 100, ${alpha})`;
+          bgColor = `rgba(50, 10, 10, ${alpha * 0.8})`;
+          break;
+        default:
+          text = event.type;
+      }
+
+      // Draw notification box
+      ctx.font = '12px monospace';
+      const textWidth = ctx.measureText(text).width;
+      const boxX = width - textWidth - 20;
+      const boxY = yOffset - 16;
+
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(boxX - 8, boxY - 4, textWidth + 16, 24);
+
+      ctx.fillStyle = color;
+      ctx.fillText(text, boxX, yOffset);
+
+      yOffset -= 30;
+    });
   }
 };

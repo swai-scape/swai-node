@@ -5,7 +5,8 @@ defmodule SwaiNodeWeb.DashboardLive do
   Shows:
   - Header with controls and training stats
   - Prominent arena canvas (live population visualization)
-  - Fitness and population graphs
+  - ECharts fitness and population graphs
+  - Event highlighting for evolutionary milestones
 
   The dashboard subscribes to two event sources:
   1. `world:state` - Live visualization updates from WorldServer
@@ -43,6 +44,9 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:behavioral_types, %{herbivore: 0, omnivore: 0, carnivore: 0})
       |> assign(:type_history, [])
       |> assign(:fitness_history, [])
+      # Event highlights
+      |> assign(:events, [])
+      |> assign(:champion_fitness, 0.0)
 
     {:ok, socket}
   end
@@ -67,13 +71,21 @@ defmodule SwaiNodeWeb.DashboardLive do
     tick = world_state[:tick] || 0
     type_history = update_type_history(socket.assigns.type_history, tick, behavioral_types)
 
+    # Add events data for canvas highlighting
+    events = socket.assigns.events
+
     socket =
       socket
       |> assign(:world_state, merged_state)
       |> assign(:world_stats, new_stats)
       |> assign(:behavioral_types, behavioral_types)
       |> assign(:type_history, type_history)
-      |> push_event("world_update", %{agents: agents_list, food: food_maps})
+      |> push_event("world_update", %{
+        agents: agents_list,
+        food: food_maps,
+        events: Enum.take(events, 5),
+        champion_fitness: socket.assigns.champion_fitness
+      })
 
     {:noreply, socket}
   end
@@ -85,17 +97,38 @@ defmodule SwaiNodeWeb.DashboardLive do
   @impl true
   def handle_info({:generation_complete, stats}, socket) do
     # Update fitness history
-    point = %{
-      generation: stats.generation,
-      best: stats.best_fitness,
-      avg: stats.avg_fitness
-    }
+    generation = stats.generation
+    best = stats.best_fitness
+    avg = stats.avg_fitness
+
+    point = %{generation: generation, best: best, avg: avg}
     fitness_history = [point | socket.assigns.fitness_history] |> Enum.take(100)
+
+    # Check for new champion (record fitness)
+    events = socket.assigns.events
+    champion_fitness = socket.assigns.champion_fitness
+    {events, champion_fitness, is_new_champion} =
+      if best > champion_fitness * 1.1 and best > 100 do
+        event = %{type: :champion, fitness: best, generation: generation, time: now()}
+        {[event | events] |> Enum.take(20), best, true}
+      else
+        {events, max(champion_fitness, best), false}
+      end
 
     socket =
       socket
       |> assign(:training_stats, stats)
       |> assign(:fitness_history, fitness_history)
+      |> assign(:events, events)
+      |> assign(:champion_fitness, champion_fitness)
+      |> push_chart_update()
+      |> then(fn s ->
+        if is_new_champion do
+          push_event(s, "evolution_event", %{type: "champion", data: %{fitness: best, generation: generation}})
+        else
+          s
+        end
+      end)
 
     {:noreply, socket}
   end
@@ -121,8 +154,22 @@ defmodule SwaiNodeWeb.DashboardLive do
       socket
       |> assign(:training_running, false)
       |> assign(:fitness_history, [])
+      |> assign(:events, [])
+      |> assign(:champion_fitness, 0.0)
       |> assign(:training_stats, %{generation: 0, best_fitness: 0.0, avg_fitness: 0.0, population: 0})
 
+    {:noreply, socket}
+  end
+
+  # Handle species events
+  @impl true
+  def handle_info({:species_created, species_info}, socket) do
+    event = %{type: :speciation, species: species_info, time: now()}
+    events = [event | socket.assigns.events] |> Enum.take(20)
+    socket =
+      socket
+      |> assign(:events, events)
+      |> push_event("evolution_event", %{type: "speciation", data: species_info})
     {:noreply, socket}
   end
 
@@ -188,9 +235,127 @@ defmodule SwaiNodeWeb.DashboardLive do
       socket
       |> assign(:training_running, false)
       |> assign(:fitness_history, [])
+      |> assign(:events, [])
+      |> assign(:champion_fitness, 0.0)
       |> assign(:training_stats, %{generation: 0, best_fitness: 0.0, avg_fitness: 0.0, population: 0})
 
     {:noreply, socket}
+  end
+
+  # ==========================================================================
+  # Chart Helpers
+  # ==========================================================================
+
+  defp push_chart_update(socket) do
+    fitness_options = build_fitness_chart_options(socket.assigns.fitness_history)
+    population_options = build_population_chart_options(socket.assigns.type_history)
+
+    socket
+    |> push_event("update-chart-fitness-chart", %{options: fitness_options})
+    |> push_event("update-chart-population-chart", %{options: population_options})
+  end
+
+  defp build_fitness_chart_options(history) do
+    reversed = Enum.reverse(history)
+    generations = Enum.map(reversed, & &1.generation)
+    best_data = Enum.map(reversed, & &1.best)
+    avg_data = Enum.map(reversed, & &1.avg)
+
+    %{
+      animation: false,
+      grid: %{left: 40, right: 10, top: 10, bottom: 25},
+      xAxis: %{
+        type: "category",
+        data: generations,
+        axisLabel: %{fontSize: 10}
+      },
+      yAxis: %{
+        type: "value",
+        axisLabel: %{fontSize: 10}
+      },
+      tooltip: %{
+        trigger: "axis"
+      },
+      series: [
+        %{
+          name: "Best",
+          type: "line",
+          data: best_data,
+          smooth: true,
+          lineStyle: %{width: 2},
+          showSymbol: false,
+          areaStyle: %{opacity: 0.1}
+        },
+        %{
+          name: "Avg",
+          type: "line",
+          data: avg_data,
+          smooth: true,
+          lineStyle: %{width: 1, type: "dashed"},
+          showSymbol: false
+        }
+      ]
+    }
+  end
+
+  defp build_population_chart_options(history) do
+    reversed = Enum.reverse(history)
+    ticks = Enum.map(reversed, & &1.tick)
+    herbivore_data = Enum.map(reversed, & &1.herbivore)
+    omnivore_data = Enum.map(reversed, & &1.omnivore)
+    carnivore_data = Enum.map(reversed, & &1.carnivore)
+
+    %{
+      animation: false,
+      grid: %{left: 40, right: 10, top: 10, bottom: 25},
+      xAxis: %{
+        type: "category",
+        data: ticks,
+        axisLabel: %{fontSize: 10}
+      },
+      yAxis: %{
+        type: "value",
+        axisLabel: %{fontSize: 10}
+      },
+      tooltip: %{
+        trigger: "axis"
+      },
+      series: [
+        %{
+          name: "Herbivore",
+          type: "line",
+          stack: "population",
+          data: herbivore_data,
+          smooth: true,
+          showSymbol: false,
+          areaStyle: %{opacity: 0.6},
+          lineStyle: %{width: 1},
+          itemStyle: %{color: "#22c55e"}
+        },
+        %{
+          name: "Omnivore",
+          type: "line",
+          stack: "population",
+          data: omnivore_data,
+          smooth: true,
+          showSymbol: false,
+          areaStyle: %{opacity: 0.6},
+          lineStyle: %{width: 1},
+          itemStyle: %{color: "#eab308"}
+        },
+        %{
+          name: "Carnivore",
+          type: "line",
+          stack: "population",
+          data: carnivore_data,
+          smooth: true,
+          showSymbol: false,
+          areaStyle: %{opacity: 0.6},
+          lineStyle: %{width: 1},
+          itemStyle: %{color: "#ef4444"}
+        }
+      ]
+    }
   end
 
   # ==========================================================================
@@ -240,6 +405,8 @@ defmodule SwaiNodeWeb.DashboardLive do
     |> assign(:world_state, world_state)
     |> assign(:world_stats, stats)
   end
+
+  defp now, do: System.monotonic_time(:millisecond)
 
   # ==========================================================================
   # Render
@@ -327,6 +494,14 @@ defmodule SwaiNodeWeb.DashboardLive do
                 <span class="font-mono text-green-400">{format_number(@training_stats[:avg_fitness] || 0)}</span>
               </div>
             </div>
+
+            <!-- Event indicator -->
+            <%= if length(@events) > 0 do %>
+              <div class="flex items-center gap-1 pl-3 border-l border-gray-700">
+                <span class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                <span class="text-yellow-400 text-xs">{length(@events)} events</span>
+              </div>
+            <% end %>
           </div>
         </div>
       </header>
@@ -334,7 +509,7 @@ defmodule SwaiNodeWeb.DashboardLive do
       <!-- Main Content: Arena + Graphs -->
       <main class="flex-1 flex flex-col p-4 gap-4 min-h-0">
         <!-- Arena (prominent) -->
-        <div class="flex-1 bg-gray-800 rounded-lg p-2 min-h-0 flex items-center justify-center">
+        <div class="flex-1 bg-gray-800 rounded-lg p-2 min-h-0 flex items-center justify-center relative">
           <canvas
             id="world-canvas"
             phx-hook="WorldCanvas"
@@ -345,13 +520,21 @@ defmodule SwaiNodeWeb.DashboardLive do
             class="rounded max-w-full max-h-full"
             style="image-rendering: pixelated;"
           />
+          <!-- Event overlay -->
+          <%= if length(@events) > 0 do %>
+            <div class="absolute top-4 right-4 flex flex-col gap-1">
+              <%= for event <- Enum.take(@events, 3) do %>
+                <.event_badge event={event} />
+              <% end %>
+            </div>
+          <% end %>
         </div>
 
         <!-- Graphs Row -->
-        <div class="h-32 flex gap-4 flex-shrink-0">
-          <!-- Fitness Graph -->
+        <div class="h-36 flex gap-4 flex-shrink-0">
+          <!-- Fitness Graph (ECharts) -->
           <div class="flex-1 bg-gray-800 rounded-lg p-3">
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-1">
               <h2 class="text-sm font-medium text-gray-300">Fitness (Training)</h2>
               <div class="flex items-center gap-4 text-xs">
                 <div class="flex items-center gap-1">
@@ -364,12 +547,18 @@ defmodule SwaiNodeWeb.DashboardLive do
                 </div>
               </div>
             </div>
-            <.fitness_graph history={@fitness_history} />
+            <div
+              id="fitness-chart"
+              phx-hook="EChartsHook"
+              phx-update="ignore"
+              data-options={Jason.encode!(build_fitness_chart_options(@fitness_history))}
+              class="h-[calc(100%-24px)] w-full"
+            />
           </div>
 
-          <!-- Population Graph by Behavioral Type -->
+          <!-- Population Graph (ECharts) -->
           <div class="flex-1 bg-gray-800 rounded-lg p-3">
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-1">
               <h2 class="text-sm font-medium text-gray-300">Population (Arena)</h2>
               <div class="flex items-center gap-4 text-xs">
                 <div class="flex items-center gap-1">
@@ -389,7 +578,13 @@ defmodule SwaiNodeWeb.DashboardLive do
                 </div>
               </div>
             </div>
-            <.population_graph history={@type_history} />
+            <div
+              id="population-chart"
+              phx-hook="EChartsHook"
+              phx-update="ignore"
+              data-options={Jason.encode!(build_population_chart_options(@type_history))}
+              class="h-[calc(100%-24px)] w-full"
+            />
           </div>
         </div>
       </main>
@@ -398,140 +593,31 @@ defmodule SwaiNodeWeb.DashboardLive do
   end
 
   # ==========================================================================
-  # Graph Components
+  # Components
   # ==========================================================================
 
-  # Fitness line chart (best + avg)
-  defp fitness_graph(assigns) do
-    history = Enum.reverse(assigns.history)
-    points_count = length(history)
-
-    assigns =
-      assigns
-      |> Map.put(:reversed_history, history)
-      |> Map.put(:points_count, points_count)
-
+  defp event_badge(assigns) do
     ~H"""
-    <div class="h-full w-full">
-      <%= if @points_count > 1 do %>
-        <svg viewBox="0 0 400 60" class="w-full h-full" preserveAspectRatio="none">
-          <!-- Best fitness line -->
-          <path
-            d={build_line_path(@reversed_history, :best, @points_count)}
-            fill="none"
-            stroke="#eab308"
-            stroke-width="2"
-          />
-          <!-- Avg fitness line -->
-          <path
-            d={build_line_path(@reversed_history, :avg, @points_count)}
-            fill="none"
-            stroke="#22c55e"
-            stroke-width="1.5"
-            stroke-dasharray="4,2"
-          />
-        </svg>
-      <% else %>
-        <div class="h-full flex items-center justify-center text-gray-500 text-sm">
-          Start training to see fitness graph...
-        </div>
-      <% end %>
+    <div class={[
+      "px-2 py-1 rounded text-xs font-medium animate-fade-in",
+      event_badge_class(@event.type)
+    ]}>
+      {event_badge_text(@event)}
     </div>
     """
   end
 
-  defp build_line_path(history, field, count) when count > 1 do
-    max_val = history |> Enum.map(&Map.get(&1, field, 0)) |> Enum.max() |> max(1)
-    width = 400
-    height = 60
-    step = width / max(count - 1, 1)
+  defp event_badge_class(:champion), do: "bg-yellow-500/20 text-yellow-400 border border-yellow-500/50"
+  defp event_badge_class(:speciation), do: "bg-purple-500/20 text-purple-400 border border-purple-500/50"
+  defp event_badge_class(_), do: "bg-gray-500/20 text-gray-400 border border-gray-500/50"
 
-    points = history
-    |> Enum.with_index()
-    |> Enum.map(fn {point, idx} ->
-      x = idx * step
-      value = Map.get(point, field, 0)
-      y = height - (value / max_val * height * 0.9) - 3
-      "#{Float.round(x, 1)},#{Float.round(max(y, 3), 1)}"
-    end)
-    |> Enum.join(" L")
-
-    "M#{points}"
+  defp event_badge_text(%{type: :champion, fitness: f, generation: g}) do
+    "Champion! Gen #{g}: #{format_number(f)}"
   end
-
-  defp build_line_path(_, _, _), do: ""
-
-  # Population area chart (herbivore/omnivore/carnivore)
-  defp population_graph(assigns) do
-    history = Enum.reverse(assigns.history)
-    points_count = length(history)
-
-    assigns =
-      assigns
-      |> Map.put(:reversed_history, history)
-      |> Map.put(:points_count, points_count)
-
-    ~H"""
-    <div class="h-full w-full">
-      <%= if @points_count > 1 do %>
-        <svg viewBox="0 0 400 60" class="w-full h-full" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="herbivoreGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" style="stop-color:#22c55e;stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:#22c55e;stop-opacity:0.1" />
-            </linearGradient>
-            <linearGradient id="omnivoreGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" style="stop-color:#eab308;stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:#eab308;stop-opacity:0.1" />
-            </linearGradient>
-            <linearGradient id="carnivoreGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-              <stop offset="0%" style="stop-color:#ef4444;stop-opacity:0.6" />
-              <stop offset="100%" style="stop-color:#ef4444;stop-opacity:0.1" />
-            </linearGradient>
-          </defs>
-          <!-- Stacked area chart -->
-          <%= for {type, color, grad} <- [
-            {:herbivore, "#22c55e", "url(#herbivoreGrad)"},
-            {:omnivore, "#eab308", "url(#omnivoreGrad)"},
-            {:carnivore, "#ef4444", "url(#carnivoreGrad)"}
-          ] do %>
-            <path
-              d={build_area_path(@reversed_history, type, @points_count)}
-              fill={grad}
-              stroke={color}
-              stroke-width="1"
-            />
-          <% end %>
-        </svg>
-      <% else %>
-        <div class="h-full flex items-center justify-center text-gray-500 text-sm">
-          Waiting for data...
-        </div>
-      <% end %>
-    </div>
-    """
+  defp event_badge_text(%{type: :speciation, species: s}) do
+    "New Species: #{s[:name] || "Unknown"}"
   end
-
-  defp build_area_path(history, type, count) when count > 1 do
-    max_pop = history |> Enum.map(fn p -> p.herbivore + p.omnivore + p.carnivore end) |> Enum.max() |> max(1)
-    width = 400
-    height = 60
-    step = width / max(count - 1, 1)
-
-    points = history
-    |> Enum.with_index()
-    |> Enum.map(fn {point, idx} ->
-      x = idx * step
-      value = Map.get(point, type, 0)
-      y = height - (value / max_pop * height * 0.9)
-      {x, y}
-    end)
-
-    line_points = points |> Enum.map(fn {x, y} -> "#{Float.round(x, 1)},#{Float.round(y, 1)}" end) |> Enum.join(" L")
-    "M0,#{height} L#{line_points} L#{width},#{height} Z"
-  end
-
-  defp build_area_path(_, _, _), do: ""
+  defp event_badge_text(_), do: "Event"
 
   defp format_number(num) when is_float(num), do: :erlang.float_to_binary(num, decimals: 1)
   defp format_number(num) when is_integer(num), do: Integer.to_string(num)
