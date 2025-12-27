@@ -2,16 +2,31 @@ defmodule SwaiNode.Domain.DomainBridge do
   @moduledoc """
   Domain bridge implementing macula-neuroevolution domain behaviours.
 
-  Provides domain-specific signals from the 2D world simulation to
-  inform silo decision-making in the neuroevolution library.
+  Implements all four domain behaviours from macula-neuroevolution:
+  - `domain_sensors` - What inputs agents perceive
+  - `domain_actuators` - What outputs agents can produce
+  - `domain_rewards` - How fitness is computed
+  - `domain_signals` - Meta-signals to inform silos
 
-  ## Signal Categories
+  ## Network Architecture
 
-  - **ecological**: Food scarcity, population density, carrying capacity
-  - **competitive**: Predator/prey ratios, conflict rates, kill rates
-  - **cultural**: Behavioral diversity (herbivore/omnivore/carnivore)
-  - **temporal**: Stagnation detection, episode timing
-  - **resource**: Energy distribution across population
+  **Sensors (37 inputs):**
+  - Vision: 24 channels (8 rays × 3 types: food, agent, wall)
+  - Hearing: 4 channels (signals from nearest agents)
+  - Smell: 3 channels (food, prey, threat density)
+  - Proprioception: 6 channels (energy, age, direction×2, signal, generation)
+
+  **Actuators (6 outputs):**
+  - Movement: turn (-1 to 1), move (0 to 1)
+  - Actions: eat, reproduce (thresholds, currently automatic)
+  - Communication: signal (0 to 1)
+  - Combat: attack (threshold)
+
+  **Rewards:**
+  - Survival: +1 per tick alive
+  - Eating: +50 per food consumed
+  - Killing: +100 per successful kill
+  - Death: -0 (handled by ending evaluation)
 
   ## Usage
 
@@ -19,24 +34,416 @@ defmodule SwaiNode.Domain.DomainBridge do
 
       :signal_router.register_domain_module(SwaiNode.Domain.DomainBridge)
 
-  Emit signals after each simulation step:
+  For evaluation, use the spec functions to build network topology:
 
-      :signal_router.emit_from_domain(world_state, metrics)
-
-  Or call directly:
-
-      signals = SwaiNode.Domain.DomainBridge.emit_signals(world_state, metrics)
-      :signal_router.route(signals)
+      sensors = SwaiNode.Domain.DomainBridge.sensor_spec()
+      actuators = SwaiNode.Domain.DomainBridge.actuator_spec()
   """
 
-  # Erlang behaviour - callbacks defined in macula-neuroevolution
-  # signal_spec/0 -> [signal_definition()]
-  # emit_signals/2 -> [signal()]
+  # Erlang behaviours - callbacks defined in macula-neuroevolution
+  # domain_sensors: sensor_spec/0, read_sensors/1
+  # domain_actuators: actuator_spec/0, apply_actuators/2
+  # domain_rewards: reward_spec/0, compute_rewards/2
+  # domain_signals: signal_spec/0, emit_signals/2
 
   # World configuration defaults (must match WorldServer)
   @default_max_food 150
   @default_starting_population 80
   @default_world_area 800 * 600
+
+  # Sensor/actuator constants (must match AgentBrain)
+  @max_energy 200.0
+  @max_age 10000
+  @max_generation 100
+
+  # =============================================================================
+  # domain_sensors behaviour
+  # =============================================================================
+
+  @doc """
+  Sensor specification for the 2D world domain.
+
+  Defines all sensory inputs available to agents (37 total).
+  """
+  def sensor_spec do
+    [
+      # Vision - 8 rays × 3 channels = 24 inputs
+      %{
+        name: :vision_food,
+        dimension: 8,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :perception,
+        description: "Distance to food in 8 directions (0=far, 1=near)"
+      },
+      %{
+        name: :vision_agent,
+        dimension: 8,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :perception,
+        description: "Distance to other agents in 8 directions"
+      },
+      %{
+        name: :vision_wall,
+        dimension: 8,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :perception,
+        description: "Distance to walls in 8 directions"
+      },
+
+      # Hearing - signals from 4 nearest agents
+      %{
+        name: :hearing,
+        dimension: 4,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :communication,
+        description: "Broadcast signals from 4 nearest agents"
+      },
+
+      # Smell - density of nearby entities
+      %{
+        name: :smell_food,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :perception,
+        description: "Food density in smell range"
+      },
+      %{
+        name: :smell_prey,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :perception,
+        description: "Prey (low-energy agents) density"
+      },
+      %{
+        name: :smell_threat,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :perception,
+        description: "Threat (high-energy agents) density"
+      },
+
+      # Proprioception - internal state
+      %{
+        name: :energy,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :proprioception,
+        description: "Current energy level normalized"
+      },
+      %{
+        name: :age,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :proprioception,
+        description: "Age normalized"
+      },
+      %{
+        name: :direction,
+        dimension: 2,
+        range: {-1.0, 1.0},
+        level: :l0,
+        category: :proprioception,
+        description: "Facing direction as (sin, cos)"
+      },
+      %{
+        name: :own_signal,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :proprioception,
+        description: "Own broadcast signal value"
+      },
+      %{
+        name: :generation,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :proprioception,
+        description: "Generation number normalized"
+      }
+    ]
+  end
+
+  @doc """
+  Read sensor values from domain state.
+
+  Returns a map of sensor name to list of float values.
+  """
+  def read_sensors(domain_state) do
+    agent = Map.get(domain_state, :agent, %{})
+    vision = Map.get(domain_state, :vision, List.duplicate(0.0, 24))
+    hearing = Map.get(domain_state, :hearing, List.duplicate(0.0, 4))
+    smell = Map.get(domain_state, :smell, [0.0, 0.0, 0.0])
+
+    # Split vision into 3 channels (food, agent, wall)
+    {vision_food, rest} = Enum.split(vision, 8)
+    {vision_agent, vision_wall} = Enum.split(rest, 8)
+
+    # Split smell into 3 values
+    [smell_food, smell_prey, smell_threat] = normalize_smell(smell)
+
+    # Proprioceptive sensors
+    energy = Map.get(agent, :energy, 100.0)
+    age = Map.get(agent, :age, 0)
+    direction = Map.get(agent, :direction, 0.0)
+    signal = Map.get(agent, :signal, 0.5)
+    generation = Map.get(agent, :generation, 0)
+
+    %{
+      vision_food: vision_food,
+      vision_agent: vision_agent,
+      vision_wall: vision_wall,
+      hearing: hearing,
+      smell_food: [smell_food],
+      smell_prey: [smell_prey],
+      smell_threat: [smell_threat],
+      energy: [min(energy / @max_energy, 1.0)],
+      age: [min(age / @max_age, 1.0)],
+      direction: [:math.sin(direction), :math.cos(direction)],
+      own_signal: [signal],
+      generation: [min(generation / @max_generation, 1.0)]
+    }
+  end
+
+  defp normalize_smell(smell) when length(smell) == 3, do: smell
+  defp normalize_smell(_), do: [0.0, 0.0, 0.0]
+
+  # =============================================================================
+  # domain_actuators behaviour
+  # =============================================================================
+
+  @doc """
+  Actuator specification for the 2D world domain.
+
+  Defines all outputs the network can produce (6 total).
+  """
+  def actuator_spec do
+    [
+      %{
+        name: :turn,
+        dimension: 1,
+        range: {-1.0, 1.0},
+        level: :l0,
+        category: :motor,
+        description: "Rotation amount (-1=left, 1=right)"
+      },
+      %{
+        name: :move,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :motor,
+        description: "Forward movement speed"
+      },
+      %{
+        name: :eat,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :action,
+        description: "Eat intention (currently automatic, >0.5 = want to eat)"
+      },
+      %{
+        name: :reproduce,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :action,
+        description: "Reproduce intention (currently automatic, >0.5 = want to reproduce)"
+      },
+      %{
+        name: :signal,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :communication,
+        description: "Broadcast signal value for other agents to hear"
+      },
+      %{
+        name: :attack,
+        dimension: 1,
+        range: {0.0, 1.0},
+        level: :l0,
+        category: :action,
+        description: "Attack intention (>0 = attempt attack on nearest agent)"
+      }
+    ]
+  end
+
+  @doc """
+  Apply actuator outputs to domain state.
+
+  Converts raw network outputs to actions and updates agent state.
+  """
+  def apply_actuators(outputs, domain_state) do
+    agent = Map.get(domain_state, :agent, %{})
+    config = Map.get(domain_state, :config, %{})
+
+    # Parse outputs (expecting map of actuator name to [float])
+    turn = get_actuator_value(outputs, :turn, 0.0)
+    move = get_actuator_value(outputs, :move, 0.0)
+    eat = get_actuator_value(outputs, :eat, 0.0)
+    reproduce = get_actuator_value(outputs, :reproduce, 0.0)
+    signal = get_actuator_value(outputs, :signal, 0.5)
+    attack = get_actuator_value(outputs, :attack, 0.0)
+
+    # Apply movement
+    width = Map.get(config, :width, 800)
+    height = Map.get(config, :height, 600)
+    agent_radius = 5.0
+    move_cost = 0.05
+
+    new_direction = agent.direction + turn * 0.1
+    move_speed = max(0.0, move) * 3.0
+
+    new_x = agent.x + :math.cos(new_direction) * move_speed
+    new_y = agent.y + :math.sin(new_direction) * move_speed
+
+    # Clamp to bounds
+    new_x = new_x |> max(agent_radius) |> min(width - agent_radius)
+    new_y = new_y |> max(agent_radius) |> min(height - agent_radius)
+
+    # Update energy
+    new_energy = agent.energy - move_cost
+
+    # Update agent
+    updated_agent = %{agent |
+      x: new_x,
+      y: new_y,
+      direction: new_direction,
+      energy: new_energy,
+      age: agent.age + 1,
+      fitness: agent.fitness + 1,
+      wants_eat: eat > 0.5,
+      wants_reproduce: reproduce > 0.5,
+      signal: signal,
+      wants_attack: attack > 0.0
+    }
+
+    %{domain_state | agent: updated_agent}
+  end
+
+  defp get_actuator_value(outputs, name, default) do
+    case Map.get(outputs, name) do
+      [value | _] when is_number(value) -> value
+      value when is_number(value) -> value
+      _ -> default
+    end
+  end
+
+  # =============================================================================
+  # domain_rewards behaviour
+  # =============================================================================
+
+  @doc """
+  Reward specification for the 2D world domain.
+
+  Defines all reward signals that can be computed from agent performance.
+  """
+  def reward_spec do
+    [
+      %{
+        name: :survival,
+        weight: 1.0,
+        level: :l0,
+        sign: :reward,
+        category: :temporal,
+        description: "Reward per tick alive"
+      },
+      %{
+        name: :eating,
+        weight: 50.0,
+        level: :l0,
+        sign: :reward,
+        category: :ecological,
+        description: "Reward for consuming food"
+      },
+      %{
+        name: :killing,
+        weight: 100.0,
+        level: :l0,
+        sign: :reward,
+        category: :competitive,
+        description: "Reward for successful kill"
+      },
+      %{
+        name: :energy_efficiency,
+        weight: 0.1,
+        level: :l0,
+        sign: :reward,
+        category: :resource,
+        description: "Reward for maintaining high energy"
+      },
+      %{
+        name: :starvation,
+        weight: 0.0,
+        level: :l0,
+        sign: :punishment,
+        category: :temporal,
+        description: "Punishment for death (implicit - ends evaluation)"
+      }
+    ]
+  end
+
+  @doc """
+  Compute rewards from domain state and metrics.
+
+  Returns a map of reward name to float value.
+  """
+  def compute_rewards(domain_state, metrics) do
+    agent = Map.get(domain_state, :agent, %{})
+
+    # Survival reward (1 per tick)
+    ticks = Map.get(metrics, :ticks_survived, Map.get(agent, :age, 0))
+
+    # Eating reward
+    food_eaten = Map.get(metrics, :food_eaten, Map.get(agent, :food_eaten, 0))
+
+    # Killing reward
+    kills = Map.get(metrics, :kills, Map.get(agent, :kills, 0))
+
+    # Energy efficiency (current energy as fraction of max)
+    energy = Map.get(agent, :energy, 100.0)
+    energy_ratio = energy / @max_energy
+
+    %{
+      survival: ticks * 1.0,
+      eating: food_eaten * 50.0,
+      killing: kills * 100.0,
+      energy_efficiency: energy_ratio * ticks * 0.1,
+      starvation: 0.0  # Implicit - evaluation ends on death
+    }
+  end
+
+  @doc """
+  Calculate total fitness from reward signals.
+
+  Applies weights from reward_spec to compute aggregate fitness.
+  """
+  def calculate_fitness(rewards) do
+    spec_map = reward_spec() |> Enum.map(&{&1.name, &1}) |> Map.new()
+
+    Enum.reduce(rewards, 0.0, fn {name, value}, acc ->
+      case Map.get(spec_map, name) do
+        %{weight: weight, sign: :reward} -> acc + value * weight / weight  # Already weighted in compute
+        %{weight: weight, sign: :punishment} -> acc - value * weight / weight
+        _ -> acc + value
+      end
+    end)
+  end
+
+  # =============================================================================
+  # domain_signals behaviour
+  # =============================================================================
 
   @doc """
   Signal specification for the 2D world domain.
