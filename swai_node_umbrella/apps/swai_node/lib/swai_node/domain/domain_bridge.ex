@@ -384,6 +384,22 @@ defmodule SwaiNode.Domain.DomainBridge do
         description: "Reward for maintaining high energy"
       },
       %{
+        name: :cooperation,
+        weight: 30.0,
+        level: :l0,
+        sign: :reward,
+        category: :social,
+        description: "Reward for peaceful proximity with other agents"
+      },
+      %{
+        name: :diplomacy,
+        weight: 50.0,
+        level: :l0,
+        sign: :reward,
+        category: :social,
+        description: "Reward for signaling before peaceful resolution"
+      },
+      %{
         name: :starvation,
         weight: 0.0,
         level: :l0,
@@ -415,11 +431,21 @@ defmodule SwaiNode.Domain.DomainBridge do
     energy = Map.get(agent, :energy, 100.0)
     energy_ratio = energy / @max_energy
 
+    # Cooperation reward: peaceful proximity events
+    # (times agent was near others without attacking)
+    peaceful_encounters = Map.get(metrics, :peaceful_encounters, Map.get(agent, :peaceful_encounters, 0))
+
+    # Diplomacy reward: encounters resolved through signaling
+    # (high signal near other agent, followed by no attack)
+    diplomatic_successes = Map.get(metrics, :diplomatic_successes, Map.get(agent, :diplomatic_successes, 0))
+
     %{
       survival: ticks * 1.0,
       eating: food_eaten * 50.0,
       killing: kills * 100.0,
       energy_efficiency: energy_ratio * ticks * 0.1,
+      cooperation: peaceful_encounters * 30.0,
+      diplomacy: diplomatic_successes * 50.0,
       starvation: 0.0  # Implicit - evaluation ends on death
     }
   end
@@ -539,6 +565,36 @@ defmodule SwaiNode.Domain.DomainBridge do
         level: :l0,
         range: {0.0, 1.0},
         description: "Proportion of population with low energy"
+      },
+
+      # Social signals (generic - routed to social_silo)
+      %{
+        name: :cooperation_rate,
+        category: :social,
+        level: :l0,
+        range: {0.0, 1.0},
+        description: "Rate of peaceful encounters (proximity without attack)"
+      },
+      %{
+        name: :signal_coordination,
+        category: :social,
+        level: :l0,
+        range: {0.0, 1.0},
+        description: "Correlation of signals among nearby agents"
+      },
+      %{
+        name: :clustering_index,
+        category: :social,
+        level: :l0,
+        range: {0.0, 1.0},
+        description: "Tendency of agents to cluster together"
+      },
+      %{
+        name: :diplomatic_success,
+        category: :social,
+        level: :l0,
+        range: {0.0, 1.0},
+        description: "Rate of encounters resolved without combat"
       }
     ]
   end
@@ -594,7 +650,13 @@ defmodule SwaiNode.Domain.DomainBridge do
 
         # Resource signals
         {:resource, :energy_distribution, calculate_energy_distribution(agents)},
-        {:resource, :starvation_pressure, calculate_starvation_pressure(agents)}
+        {:resource, :starvation_pressure, calculate_starvation_pressure(agents)},
+
+        # Social signals (generic - routed to social_silo)
+        {:social, :cooperation_rate, calculate_cooperation_rate(agents, stats)},
+        {:social, :signal_coordination, calculate_signal_coordination(agents)},
+        {:social, :clustering_index, calculate_clustering_index(agents, config)},
+        {:social, :diplomatic_success, calculate_diplomatic_success(stats)}
       ]
     end
   end
@@ -785,6 +847,122 @@ defmodule SwaiNode.Domain.DomainBridge do
     end)
 
     clamp(starving / max(1, length(agents)), 0.0, 1.0)
+  end
+
+  # ===========================================================================
+  # Social Signal Calculations
+  # ===========================================================================
+
+  @proximity_threshold 50.0  # Distance to consider agents "near" each other
+
+  defp calculate_cooperation_rate(agents, stats) do
+    # Cooperation = proximity encounters that don't result in attacks
+    # High cooperation = agents near each other without attacking
+    _total = length(agents)
+    attacks = Map.get(stats, :attacks, 0)
+
+    # Count agents in close proximity
+    close_pairs = count_close_pairs(agents)
+
+    if close_pairs > 0 do
+      # Attack rate among close pairs (0 = all peaceful, 1 = all attacking)
+      attack_rate = min(1.0, attacks / close_pairs)
+      # Cooperation is inverse of attack rate
+      clamp(1.0 - attack_rate, 0.0, 1.0)
+    else
+      0.5  # No close encounters = neutral
+    end
+  end
+
+  defp calculate_signal_coordination(agents) do
+    # Measure correlation of signals among nearby agents
+    # High coordination = agents signaling similarly when near each other
+    total = length(agents)
+
+    if total < 2 do
+      0.5
+    else
+      # For each agent, compare signal to average of nearby agents
+      coordination_scores = Enum.map(agents, fn agent ->
+        nearby = find_nearby_agents(agent, agents, @proximity_threshold)
+
+        if length(nearby) > 0 do
+          my_signal = Map.get(agent, :signal, 0.5)
+          neighbor_signals = Enum.map(nearby, &Map.get(&1, :signal, 0.5))
+          avg_neighbor_signal = Enum.sum(neighbor_signals) / length(neighbor_signals)
+
+          # Coordination = 1 - difference between my signal and neighbors
+          1.0 - abs(my_signal - avg_neighbor_signal)
+        else
+          0.5  # No neighbors = neutral
+        end
+      end)
+
+      clamp(Enum.sum(coordination_scores) / total, 0.0, 1.0)
+    end
+  end
+
+  defp calculate_clustering_index(agents, config) do
+    # Measure how clustered agents are vs uniformly distributed
+    total = length(agents)
+
+    if total < 3 do
+      0.0
+    else
+      # World size for potential future use
+      _width = Map.get(config, :width, 800)
+      _height = Map.get(config, :height, 600)
+
+      # Count agents with at least 2 neighbors nearby
+      clustered = Enum.count(agents, fn agent ->
+        nearby = find_nearby_agents(agent, agents, @proximity_threshold * 1.5)
+        length(nearby) >= 2
+      end)
+
+      clamp(clustered / total, 0.0, 1.0)
+    end
+  end
+
+  defp calculate_diplomatic_success(stats) do
+    # Diplomacy = encounters where agents approached, signaled, and didn't attack
+    # We track this via: encounters - attacks = peaceful resolutions
+    encounters = Map.get(stats, :encounters, 0)
+    attacks = Map.get(stats, :attacks, 0)
+
+    if encounters > 0 do
+      peaceful = encounters - attacks
+      clamp(peaceful / encounters, 0.0, 1.0)
+    else
+      0.5  # No encounters = neutral
+    end
+  end
+
+  defp count_close_pairs(agents) do
+    # Count pairs of agents within proximity threshold
+    agents
+    |> Enum.with_index()
+    |> Enum.reduce(0, fn {agent1, i}, acc ->
+      nearby_count = agents
+        |> Enum.drop(i + 1)
+        |> Enum.count(fn agent2 ->
+          distance(agent1, agent2) < @proximity_threshold
+        end)
+      acc + nearby_count
+    end)
+  end
+
+  defp find_nearby_agents(agent, all_agents, threshold) do
+    Enum.filter(all_agents, fn other ->
+      other != agent and distance(agent, other) < threshold
+    end)
+  end
+
+  defp distance(agent1, agent2) do
+    x1 = Map.get(agent1, :x, 0.0)
+    y1 = Map.get(agent1, :y, 0.0)
+    x2 = Map.get(agent2, :x, 0.0)
+    y2 = Map.get(agent2, :y, 0.0)
+    :math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1))
   end
 
   # ===========================================================================

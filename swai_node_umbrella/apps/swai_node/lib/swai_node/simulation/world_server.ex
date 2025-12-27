@@ -99,7 +99,7 @@ defmodule SwaiNode.Simulation.WorldServer do
       mode: :realtime,
       running: false,
       next_agent_id: 1,
-      stats: %{births: 0, deaths: 0, food_eaten: 0, attacks: 0, kills: 0},
+      stats: %{births: 0, deaths: 0, food_eaten: 0, attacks: 0, kills: 0, encounters: 0, peaceful_encounters: 0, diplomatic_successes: 0},
       # LC Silo integration
       prev_best_fitness: 0.0,
       silo_update_tick: 0,
@@ -181,7 +181,7 @@ defmodule SwaiNode.Simulation.WorldServer do
       tick: 0,
       generation: 0,
       next_agent_id: 1,
-      stats: %{births: 0, deaths: 0, food_eaten: 0, attacks: 0, kills: 0},
+      stats: %{births: 0, deaths: 0, food_eaten: 0, attacks: 0, kills: 0, encounters: 0, peaceful_encounters: 0, diplomatic_successes: 0},
       prev_best_fitness: 0.0,
       silo_update_tick: 0,
       species_info: %{},
@@ -244,6 +244,7 @@ defmodule SwaiNode.Simulation.WorldServer do
     state
     |> increment_tick()
     |> update_agents()
+    |> handle_encounters()  # Track social interactions for diplomacy/cooperation
     |> handle_attacks()
     |> handle_eating()
     |> handle_reproduction()
@@ -486,6 +487,77 @@ defmodule SwaiNode.Simulation.WorldServer do
     ]
   end
 
+  # Social proximity threshold for encounter tracking
+  @encounter_range 50.0
+  @high_signal_threshold 0.7
+
+  # Track social encounters: proximity events, peaceful encounters, diplomatic successes
+  # This enables cooperation and diplomacy to evolve by rewarding peaceful behavior
+  defp handle_encounters(state) do
+    agents = state.agents
+    agent_list = Map.to_list(agents)
+
+    # Find all pairs within encounter range
+    {encounters, peaceful, diplomatic, updated_agents} =
+      agent_list
+      |> Enum.with_index()
+      |> Enum.reduce({0, 0, 0, agents}, fn {{id1, agent1}, idx}, {enc, peace, diplo, acc_agents} ->
+        # Check against all agents after this one (avoid double counting)
+        nearby = agent_list
+          |> Enum.drop(idx + 1)
+          |> Enum.filter(fn {_id2, agent2} ->
+            distance = :math.sqrt(:math.pow(agent1.x - agent2.x, 2) + :math.pow(agent1.y - agent2.y, 2))
+            distance < @encounter_range
+          end)
+
+        Enum.reduce(nearby, {enc, peace, diplo, acc_agents}, fn {id2, agent2}, {e, p, d, agents_acc} ->
+          # This is an encounter
+          new_e = e + 1
+
+          a1_wants_attack = Map.get(agent1, :wants_attack, false)
+          a2_wants_attack = Map.get(agent2, :wants_attack, false)
+
+          if not a1_wants_attack and not a2_wants_attack do
+            # Peaceful encounter - both agents chose not to attack
+            new_p = p + 1
+
+            # Update per-agent peaceful encounter counts
+            updated1 = Map.update(agents_acc[id1], :peaceful_encounters, 1, &(&1 + 1))
+            updated2 = Map.update(agents_acc[id2], :peaceful_encounters, 1, &(&1 + 1))
+            agents_acc = agents_acc |> Map.put(id1, updated1) |> Map.put(id2, updated2)
+
+            # Check for diplomatic success (high signal from either party)
+            a1_signal = Map.get(agent1, :signal, 0.5)
+            a2_signal = Map.get(agent2, :signal, 0.5)
+
+            if a1_signal > @high_signal_threshold or a2_signal > @high_signal_threshold do
+              # Diplomatic success: signaled and didn't attack
+              new_d = d + 1
+
+              # Update per-agent diplomatic success counts
+              updated1 = Map.update(agents_acc[id1], :diplomatic_successes, 1, &(&1 + 1))
+              updated2 = Map.update(agents_acc[id2], :diplomatic_successes, 1, &(&1 + 1))
+              agents_acc = agents_acc |> Map.put(id1, updated1) |> Map.put(id2, updated2)
+
+              {new_e, new_p, new_d, agents_acc}
+            else
+              {new_e, new_p, d, agents_acc}
+            end
+          else
+            {new_e, p, d, agents_acc}
+          end
+        end)
+      end)
+
+    stats = %{state.stats |
+      encounters: state.stats.encounters + encounters,
+      peaceful_encounters: state.stats.peaceful_encounters + peaceful,
+      diplomatic_successes: state.stats.diplomatic_successes + diplomatic
+    }
+
+    %{state | agents: updated_agents, stats: stats}
+  end
+
   # Handle agent attacks - agents can eat other agents
   defp handle_attacks(state) do
     agents = state.agents
@@ -638,6 +710,8 @@ defmodule SwaiNode.Simulation.WorldServer do
       fitness: 0.0,
       food_eaten: 0,
       kills: 0,
+      peaceful_encounters: 0,
+      diplomatic_successes: 0,
       network: offspring_network,
       parent_id: parent.id,
       species_id: parent.species_id,
@@ -699,6 +773,8 @@ defmodule SwaiNode.Simulation.WorldServer do
           fitness: 0.0,
           food_eaten: 0,
           kills: 0,
+          peaceful_encounters: 0,
+          diplomatic_successes: 0,
           network: AgentBrain.create_network(),
           parent_id: nil,
           species_id: "gen0",
