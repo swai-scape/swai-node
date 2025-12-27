@@ -498,7 +498,7 @@ defmodule SwaiNode.Domain.DomainBridge do
         description: "Kill success rate (kills / attacks)"
       },
 
-      # Cultural/behavioral signals
+      # Cultural signals (generic evolutionary metrics - routed to silos)
       %{
         name: :behavioral_diversity,
         category: :cultural,
@@ -506,12 +506,14 @@ defmodule SwaiNode.Domain.DomainBridge do
         range: {0.0, 1.0},
         description: "Shannon diversity of behavioral types"
       },
+
+      # Domain-local signals (NOT routed to silos - domain-specific)
       %{
         name: :carnivore_emergence,
-        category: :cultural,
+        category: :domain_local,
         level: :l0,
         range: {0.0, 1.0},
-        description: "Proportion of population with predatory behavior"
+        description: "Proportion of population with predatory behavior (domain-specific)"
       },
 
       # Temporal signals
@@ -581,9 +583,11 @@ defmodule SwaiNode.Domain.DomainBridge do
         {:competitive, :conflict_rate, calculate_conflict_rate(stats, population)},
         {:competitive, :lethality_rate, calculate_lethality_rate(stats)},
 
-        # Cultural signals
+        # Cultural signals (generic metrics - routed to silos)
         {:cultural, :behavioral_diversity, calculate_behavioral_diversity(agents)},
-        {:cultural, :carnivore_emergence, calculate_carnivore_emergence(agents)},
+
+        # Domain-local signals (NOT routed to silos)
+        {:domain_local, :carnivore_emergence, calculate_carnivore_emergence(agents)},
 
         # Temporal signals
         {:temporal, :fitness_stagnation, calculate_fitness_stagnation(metrics)},
