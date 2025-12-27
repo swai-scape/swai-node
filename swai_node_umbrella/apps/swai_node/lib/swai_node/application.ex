@@ -7,6 +7,9 @@ defmodule SwaiNode.Application do
 
   @impl true
   def start(_type, _args) do
+    # Register domain bridge with signal_router for silo communication
+    :signal_router.register_domain_module(SwaiNode.Domain.DomainBridge)
+
     children = [
       SwaiNode.Repo,
       {Ecto.Migrator,
