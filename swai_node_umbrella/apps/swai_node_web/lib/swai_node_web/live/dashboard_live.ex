@@ -37,7 +37,7 @@ defmodule SwaiNodeWeb.DashboardLive do
     geo_config = Application.get_env(:swai_node, :geo, %{})
     longitude = geo_config[:longitude] || 4.9041
     latitude = geo_config[:latitude] || 52.3676
-    zoom = geo_config[:default_zoom] || 4
+    zoom = geo_config[:default_zoom] || 17
 
     socket =
       socket
@@ -461,8 +461,8 @@ defmodule SwaiNodeWeb.DashboardLive do
           </div>
           <div class="flex items-center gap-6 text-sm">
             <div class="flex items-center gap-2">
-              <span class="text-gray-500">Location:</span>
-              <span class="text-cyan-400 font-mono">{:erlang.float_to_binary(@geo_latitude, decimals: 2)}°, {:erlang.float_to_binary(@geo_longitude, decimals: 2)}°</span>
+              <span class="text-gray-500">Tick:</span>
+              <span class="text-white font-mono">{@world_stats.tick}</span>
             </div>
             <div class="flex items-center gap-2">
               <span class="text-gray-500">Agents:</span>
@@ -476,31 +476,52 @@ defmodule SwaiNodeWeb.DashboardLive do
         </div>
       </header>
 
-      <!-- MAIN: World Map -->
-      <main class="flex-1 min-h-0" id="map-container" phx-update="ignore">
-        <div
-          id="world-map"
-          phx-hook="WorldMap"
-          data-longitude={@geo_longitude}
-          data-latitude={@geo_latitude}
-          data-zoom={@geo_zoom}
-          data-width={@world_state.config.width}
-          data-height={@world_state.config.height}
-          class="w-full h-full"
-        />
+      <!-- MAIN: Split Screen - Map (2/3) + Insights (1/3) -->
+      <main class="flex-1 min-h-0 flex">
+        <!-- Left: World Map (2/3 width) -->
+        <div class="w-2/3 h-full" id="map-container" phx-update="ignore">
+          <div
+            id="world-map"
+            phx-hook="WorldMap"
+            data-longitude={@geo_longitude}
+            data-latitude={@geo_latitude}
+            data-zoom={@geo_zoom}
+            data-width={@world_state.config.width}
+            data-height={@world_state.config.height}
+            class="w-full h-full"
+          />
+        </div>
+
+        <!-- Right: Insights Panel (1/3 width) -->
+        <div class="w-1/3 h-full bg-gray-850 border-l border-gray-700 flex flex-col overflow-hidden">
+          <!-- Legend -->
+          <.legend_panel behavioral_types={@behavioral_types} world_stats={@world_stats} />
+
+          <!-- AI Insights -->
+          <.insights_panel
+            world_stats={@world_stats}
+            behavioral_types={@behavioral_types}
+            social_metrics={@social_metrics}
+            events={@events}
+            champion_fitness={@champion_fitness}
+          />
+
+          <!-- Population Charts -->
+          <.charts_panel
+            fitness_history={@fitness_history}
+            type_history={@type_history}
+            diversity_history={@diversity_history}
+          />
+        </div>
       </main>
 
-      <!-- FOOTER: World Stats -->
+      <!-- FOOTER: Quick Stats -->
       <footer class="bg-gray-800 border-t border-gray-700 px-4 py-2 flex-shrink-0">
         <div class="flex items-center justify-between text-sm">
           <div class="flex items-center gap-6">
             <div class="flex items-center gap-2">
-              <span class="text-gray-500">Tick:</span>
-              <span class="text-white font-mono">{@world_stats.tick}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-gray-500">Food:</span>
-              <span class="text-green-400 font-mono">{@world_stats.food_count}</span>
+              <span class="text-gray-500">Location:</span>
+              <span class="text-cyan-400 font-mono">{:erlang.float_to_binary(@geo_latitude, decimals: 2)}°, {:erlang.float_to_binary(@geo_longitude, decimals: 2)}°</span>
             </div>
             <div class="flex items-center gap-2">
               <span class="text-gray-500">Best Fitness:</span>
@@ -517,6 +538,206 @@ defmodule SwaiNodeWeb.DashboardLive do
     </div>
     """
   end
+
+  # ==========================================================================
+  # Panel Components
+  # ==========================================================================
+
+  defp legend_panel(assigns) do
+    ~H"""
+    <div class="p-4 border-b border-gray-700">
+      <h3 class="text-sm font-semibold text-gray-400 mb-3 flex items-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+        </svg>
+        Legend
+      </h3>
+
+      <div class="space-y-3">
+        <!-- Agents Section -->
+        <div>
+          <div class="text-xs text-gray-500 mb-2">Agents by Behavior</div>
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2">
+              <svg class="w-3 h-3" viewBox="0 0 12 12">
+                <circle cx="6" cy="6" r="5" fill="#22c55e" stroke="#16a34a" stroke-width="1"/>
+              </svg>
+              <span class="text-xs text-gray-300">Herbivore (circle)</span>
+              <span class="text-xs text-green-400 font-mono ml-auto">{@behavioral_types.herbivore}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg class="w-3 h-3" viewBox="0 0 12 12">
+                <polygon points="6,1 11,6 6,11 1,6" fill="#eab308" stroke="#ca8a04" stroke-width="1"/>
+              </svg>
+              <span class="text-xs text-gray-300">Omnivore (diamond)</span>
+              <span class="text-xs text-yellow-400 font-mono ml-auto">{@behavioral_types.omnivore}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <svg class="w-3 h-3" viewBox="0 0 12 12">
+                <polygon points="11,6 2,1 2,11" fill="#ef4444" stroke="#dc2626" stroke-width="1"/>
+              </svg>
+              <span class="text-xs text-gray-300">Carnivore (triangle)</span>
+              <span class="text-xs text-red-400 font-mono ml-auto">{@behavioral_types.carnivore}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Food Section -->
+        <div>
+          <div class="text-xs text-gray-500 mb-2">Resources</div>
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-sm bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]"></div>
+              <span class="text-xs text-gray-300">Food</span>
+              <span class="text-xs text-emerald-400 font-mono ml-auto">{@world_stats.food_count}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Special Markers -->
+        <div>
+          <div class="text-xs text-gray-500 mb-2">Markers</div>
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full border-2 border-purple-500"></div>
+              <span class="text-xs text-gray-300">Node Origin</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.6)]"></div>
+              <span class="text-xs text-gray-300">Champion</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <div class="w-3 h-3 rounded-full bg-red-500 shadow-[0_0_6px_rgba(239,68,68,0.5)]"></div>
+              <span class="text-xs text-gray-300">Attacking</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  defp insights_panel(assigns) do
+    insights = generate_insights(assigns)
+    assigns = assign(assigns, :insights, insights)
+
+    ~H"""
+    <div class="p-4 border-b border-gray-700 flex-shrink-0">
+      <h3 class="text-sm font-semibold text-gray-400 mb-3 flex items-center gap-2">
+        <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/>
+        </svg>
+        AI Insights
+      </h3>
+
+      <div class="space-y-2">
+        <%= for insight <- @insights do %>
+          <div class={["p-2 rounded text-xs", insight_class(insight.type)]}>
+            <div class="flex items-start gap-2">
+              <span class="text-base">{insight.icon}</span>
+              <div>
+                <div class="font-medium">{insight.title}</div>
+                <div class="text-gray-400 mt-0.5">{insight.description}</div>
+              </div>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    </div>
+    """
+  end
+
+  defp charts_panel(assigns) do
+    ~H"""
+    <div class="flex-1 p-4 overflow-y-auto space-y-4">
+      <!-- Fitness Chart -->
+      <div class="bg-gray-800 rounded-lg p-3">
+        <div class="text-xs text-gray-500 mb-2">Fitness Over Time</div>
+        <div id="fitness-chart" phx-hook="EChart" phx-update="ignore" class="h-24"></div>
+      </div>
+
+      <!-- Population Chart -->
+      <div class="bg-gray-800 rounded-lg p-3">
+        <div class="text-xs text-gray-500 mb-2">Population by Type</div>
+        <div id="population-chart" phx-hook="EChart" phx-update="ignore" class="h-24"></div>
+      </div>
+
+      <!-- Diversity Chart -->
+      <div class="bg-gray-800 rounded-lg p-3">
+        <div class="text-xs text-gray-500 mb-2">Genetic Diversity</div>
+        <div id="diversity-chart" phx-hook="EChart" phx-update="ignore" class="h-24"></div>
+      </div>
+    </div>
+    """
+  end
+
+  # ==========================================================================
+  # Insight Generation
+  # ==========================================================================
+
+  defp generate_insights(assigns) do
+    insights = []
+
+    # Population health insight
+    population = assigns.world_stats.population || 0
+    insights = if population == 0 do
+      [%{type: :danger, icon: "💀", title: "Population Extinct", description: "All agents have died. Click Reset to restart."} | insights]
+    else
+      if population < 20 do
+        [%{type: :warning, icon: "⚠️", title: "Low Population", description: "Only #{population} agents remain. Survival is critical."} | insights]
+      else
+        insights
+      end
+    end
+
+    # Behavioral balance insight
+    %{herbivore: h, omnivore: o, carnivore: c} = assigns.behavioral_types
+    total = h + o + c
+    insights = if total > 0 do
+      carn_ratio = c / total
+      cond do
+        carn_ratio > 0.5 ->
+          [%{type: :warning, icon: "🔴", title: "Predator Dominance", description: "#{round(carn_ratio * 100)}% carnivores may cause population collapse."} | insights]
+        carn_ratio < 0.1 and c > 0 ->
+          [%{type: :info, icon: "🌱", title: "Peaceful Ecosystem", description: "Herbivores dominate. Low predation pressure."} | insights]
+        true ->
+          insights
+      end
+    else
+      insights
+    end
+
+    # Champion insight
+    insights = if assigns.champion_fitness > 0 do
+      [%{type: :success, icon: "🏆", title: "Champion Fitness: #{format_number(assigns.champion_fitness)}", description: "The fittest agent in the population."} | insights]
+    else
+      insights
+    end
+
+    # Social metrics insight
+    coop_rate = assigns.social_metrics.cooperation_rate || 0.5
+    insights = cond do
+      coop_rate > 0.7 ->
+        [%{type: :success, icon: "🤝", title: "High Cooperation", description: "Agents are frequently cooperating (#{round(coop_rate * 100)}%)."} | insights]
+      coop_rate < 0.3 ->
+        [%{type: :info, icon: "⚔️", title: "Competitive Environment", description: "Low cooperation (#{round(coop_rate * 100)}%). Survival of the fittest."} | insights]
+      true ->
+        insights
+    end
+
+    # Default insight if none
+    if insights == [] do
+      [%{type: :info, icon: "🧬", title: "Evolution in Progress", description: "Agents are evolving and adapting to the environment."}]
+    else
+      Enum.take(insights, 4)  # Limit to 4 insights
+    end
+  end
+
+  defp insight_class(:danger), do: "bg-red-950/50 border border-red-900/50 text-red-300"
+  defp insight_class(:warning), do: "bg-yellow-950/50 border border-yellow-900/50 text-yellow-300"
+  defp insight_class(:success), do: "bg-green-950/50 border border-green-900/50 text-green-300"
+  defp insight_class(:info), do: "bg-purple-950/50 border border-purple-900/50 text-purple-300"
+  defp insight_class(_), do: "bg-gray-800 border border-gray-700 text-gray-300"
 
   # ==========================================================================
   # Components

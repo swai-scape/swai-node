@@ -1051,8 +1051,12 @@ defmodule SwaiNode.Simulation.WorldServer do
   end
 
   defp broadcast_state(state) do
-    # Broadcast in realtime mode, or every 25 ticks in fast mode for UI responsiveness
-    should_broadcast = state.mode == :realtime or rem(state.tick, 25) == 0
+    # Throttle broadcasts to avoid overwhelming the browser
+    # Realtime: every 5 ticks (~6fps), Fast: every 50 ticks
+    should_broadcast = case state.mode do
+      :realtime -> rem(state.tick, 5) == 0
+      :fast -> rem(state.tick, 50) == 0
+    end
 
     if should_broadcast do
       agents_list = Map.values(state.agents)

@@ -47,7 +47,6 @@ export const WorldMap = {
     this.handleEvent("world_update", (payload) => {
       this.agents = payload.agents || [];
       this.food = payload.food || [];
-      this.sonifySignals();
       this.renderAgents();
     });
 
@@ -137,6 +136,8 @@ export const WorldMap = {
     const container = this.map.getContainer();
     this.canvas.width = container.clientWidth;
     this.canvas.height = container.clientHeight;
+    // Tell Leaflet that container size changed
+    this.map.invalidateSize();
     this.renderAgents();
   },
 
@@ -196,161 +197,124 @@ export const WorldMap = {
     // Calculate pixel size of 1 meter at current zoom
     const pixelsPerMeter = this.metersToPixels(1);
 
-    // Draw food
+    // Draw food as squares with glow
     this.food.forEach(food => {
-      let lat, lon;
+      const coords = this.getFoodCoords(food);
+      if (!coords) return;
 
-      // Check if food has lat/lon or needs conversion from x/y
-      if (food.lat !== undefined && food.lon !== undefined) {
-        lat = food.lat;
-        lon = food.lon;
-      } else {
-        const coords = this.pixelToLatLon(food.x, food.y);
-        lat = coords.lat;
-        lon = coords.lon;
-      }
+      const pixel = this.latLonToPixel(coords.lat, coords.lon);
+      if (this.isOffScreen(pixel, width, height)) return;
 
-      const pixel = this.latLonToPixel(lat, lon);
+      const size = Math.max(4, FOOD_RADIUS_METERS * pixelsPerMeter * 1.5);
+      const energy = food.energy || 20;
+      const energyRatio = Math.min(energy / 30, 1);
 
-      // Skip if off-screen
-      if (pixel.x < -50 || pixel.x > width + 50 || pixel.y < -50 || pixel.y > height + 50) {
-        return;
-      }
-
-      // Food radius in pixels (minimum 2px for visibility)
-      const radius = Math.max(2, FOOD_RADIUS_METERS * pixelsPerMeter);
-
-      // Glow effect
-      const gradient = ctx.createRadialGradient(pixel.x, pixel.y, 0, pixel.x, pixel.y, radius * 2);
-      gradient.addColorStop(0, 'rgba(74, 222, 128, 0.8)');
+      // Glow effect (intensity based on energy)
+      const glowSize = size * 2;
+      const gradient = ctx.createRadialGradient(pixel.x, pixel.y, 0, pixel.x, pixel.y, glowSize);
+      gradient.addColorStop(0, `rgba(74, 222, 128, ${0.4 + energyRatio * 0.4})`);
       gradient.addColorStop(1, 'rgba(74, 222, 128, 0)');
       ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(pixel.x, pixel.y, radius * 2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillRect(pixel.x - glowSize, pixel.y - glowSize, glowSize * 2, glowSize * 2);
 
-      // Core
-      ctx.fillStyle = '#4ade80';
-      ctx.beginPath();
-      ctx.arc(pixel.x, pixel.y, radius, 0, Math.PI * 2);
-      ctx.fill();
+      // Food square with rounded corners
+      ctx.fillStyle = `hsl(142, ${60 + energyRatio * 20}%, ${45 + energyRatio * 15}%)`;
+      this.drawRoundedRect(ctx, pixel.x - size/2, pixel.y - size/2, size, size, 2);
+
+      // Inner highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      this.drawRoundedRect(ctx, pixel.x - size/4, pixel.y - size/2 + 1, size/2, size/4, 1);
     });
 
-    // Find max generation for normalization
+    // Find max values for normalization
     const maxGen = Math.max(1, ...this.agents.map(a => a.generation || 0));
-    const maxFitness = Math.max(1, ...this.agents.map(a => a.fitness || 0));
 
-    // Draw agents
+    // Draw agents with shape based on behavior
     this.agents.forEach(agent => {
-      let lat, lon;
+      const coords = this.getAgentCoords(agent);
+      if (!coords) return;
 
-      // Check if agent has lat/lon or needs conversion from x/y
-      if (agent.lat !== undefined && agent.lon !== undefined) {
-        lat = agent.lat;
-        lon = agent.lon;
-      } else {
-        const coords = this.pixelToLatLon(agent.x, agent.y);
-        lat = coords.lat;
-        lon = coords.lon;
-      }
+      const pixel = this.latLonToPixel(coords.lat, coords.lon);
+      if (this.isOffScreen(pixel, width, height)) return;
 
-      const pixel = this.latLonToPixel(lat, lon);
+      const { direction, energy, generation, signal, wants_attack, kills, id, food_eaten } = agent;
+      const killCount = kills || 0;
+      const foodCount = food_eaten || 0;
 
-      // Skip if off-screen
-      if (pixel.x < -50 || pixel.x > width + 50 || pixel.y < -50 || pixel.y > height + 50) {
-        return;
-      }
+      // Determine behavior type
+      const behaviorType = this.getBehaviorType(killCount, foodCount);
 
-      const { direction, energy, fitness, generation, signal, wants_attack, kills, id } = agent;
+      // Size based on energy (min 4px, max 12px)
+      const energyRatio = Math.min((energy || 50) / 150, 1);
+      const baseSize = Math.max(4, AGENT_RADIUS_METERS * pixelsPerMeter);
+      const size = baseSize * (0.7 + energyRatio * 0.6);
 
       const isChampion = this.championId && id === this.championId;
 
-      // Generation determines HUE
+      // Generation determines HUE (purple -> cyan -> green)
       const genRatio = (generation || 0) / maxGen;
-      let hue = 270 - (genRatio * 180);
+      let hue = 280 - (genRatio * 160); // 280 (purple) -> 120 (green)
 
-      // Hunters shift toward red
-      const killCount = kills || 0;
-      if (killCount > 0) {
-        hue = Math.max(0, hue - (killCount * 30));
+      // Carnivores shift toward red/orange
+      if (behaviorType === 'carnivore') {
+        hue = 0 + (genRatio * 30); // Red to orange
+      } else if (behaviorType === 'omnivore') {
+        hue = 45 + (genRatio * 30); // Orange to yellow
       }
 
-      // Agent radius: 0.5m base, minimum 2px for visibility
-      const radius = Math.max(2, AGENT_RADIUS_METERS * pixelsPerMeter);
+      const saturation = 60 + (energyRatio * 25);
+      const lightness = 35 + (energyRatio * 20);
+      const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+
+      // === DECORATORS (drawn first, behind agent) ===
 
       // Champion golden aura
       if (isChampion) {
-        const pulsePhase = (now % 1000) / 1000;
-        const pulseSize = 1 + Math.sin(pulsePhase * Math.PI * 2) * 0.3;
-        const auraRadius = radius * 3 * pulseSize;
-        const gradient = ctx.createRadialGradient(pixel.x, pixel.y, radius, pixel.x, pixel.y, auraRadius);
-        gradient.addColorStop(0, 'rgba(255, 215, 0, 0.6)');
-        gradient.addColorStop(0.5, 'rgba(255, 180, 0, 0.3)');
-        gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(pixel.x, pixel.y, auraRadius, 0, Math.PI * 2);
-        ctx.fill();
+        this.drawChampionAura(ctx, pixel.x, pixel.y, size, now);
       }
 
-      // Attack glow
+      // Attack glow (pulsing red)
       if (wants_attack) {
-        const glowRadius = radius * 2.5;
-        const gradient = ctx.createRadialGradient(pixel.x, pixel.y, radius, pixel.x, pixel.y, glowRadius);
-        gradient.addColorStop(0, 'rgba(255, 50, 50, 0.7)');
-        gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(pixel.x, pixel.y, glowRadius, 0, Math.PI * 2);
-        ctx.fill();
+        this.drawAttackGlow(ctx, pixel.x, pixel.y, size, now);
+      }
+      // Signal aura (communication)
+      else if (signal !== undefined && Math.abs(signal - 0.5) > 0.15) {
+        this.drawSignalAura(ctx, pixel.x, pixel.y, size, signal);
+      }
+
+      // Energy ring (shows health)
+      this.drawEnergyRing(ctx, pixel.x, pixel.y, size, energyRatio);
+
+      // === AGENT BODY (shape by behavior) ===
+      ctx.fillStyle = color;
+      ctx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness - 15}%)`;
+      ctx.lineWidth = 1;
+
+      if (behaviorType === 'carnivore') {
+        // Triangle pointing in direction (predator)
+        this.drawTriangle(ctx, pixel.x, pixel.y, size, direction);
+      } else if (behaviorType === 'omnivore') {
+        // Diamond shape (adaptable)
+        this.drawDiamond(ctx, pixel.x, pixel.y, size, direction);
       } else {
-        // Signal glow
-        const signalValue = signal || 0.5;
-        if (Math.abs(signalValue - 0.5) > 0.1) {
-          const glowIntensity = signalValue * 0.6;
-          const glowColor = signalValue > 0.5
-            ? `rgba(255, 200, 100, ${glowIntensity})`
-            : `rgba(100, 200, 255, ${glowIntensity})`;
-          const glowRadius = radius * (1.5 + signalValue);
-          const gradient = ctx.createRadialGradient(pixel.x, pixel.y, radius, pixel.x, pixel.y, glowRadius);
-          gradient.addColorStop(0, glowColor);
-          gradient.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = gradient;
-          ctx.beginPath();
-          ctx.arc(pixel.x, pixel.y, glowRadius, 0, Math.PI * 2);
-          ctx.fill();
-        }
+        // Circle (peaceful herbivore)
+        this.drawCircle(ctx, pixel.x, pixel.y, size);
       }
 
-      // Energy determines saturation/lightness
-      const energyRatio = Math.min(energy / 200, 1);
-      const saturation = 50 + (energyRatio * 30);
-      const lightness = 30 + (energyRatio * 25);
+      // === TOP DECORATORS ===
 
-      // Draw agent body
-      ctx.fillStyle = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-      ctx.beginPath();
-      ctx.arc(pixel.x, pixel.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Champion border
+      // Champion crown
       if (isChampion) {
-        ctx.strokeStyle = 'rgba(255, 215, 0, 1)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        this.drawCrown(ctx, pixel.x, pixel.y - radius - 4, radius);
+        this.drawCrown(ctx, pixel.x, pixel.y - size - 3, size * 0.8);
       }
 
-      // Direction indicator
-      const dirLen = radius * 1.5;
-      const dirX = pixel.x + Math.cos(direction) * dirLen;
-      const dirY = pixel.y + Math.sin(direction) * dirLen;
-      ctx.strokeStyle = `hsl(${hue}, ${saturation}%, ${lightness + 20}%)`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(pixel.x, pixel.y);
-      ctx.lineTo(dirX, dirY);
-      ctx.stroke();
+      // Direction indicator (small line)
+      this.drawDirectionIndicator(ctx, pixel.x, pixel.y, size, direction, color);
+
+      // Kill count badge (for hunters)
+      if (killCount > 0) {
+        this.drawKillBadge(ctx, pixel.x + size, pixel.y - size, killCount);
+      }
     });
 
     // Draw minimal stats overlay (top-left, under zoom controls)
@@ -521,6 +485,182 @@ export const WorldMap = {
       osc.disconnect();
       gainNode.disconnect();
     };
+  },
+
+  // ==========================================================================
+  // Helper: Coordinate conversion
+  // ==========================================================================
+
+  getFoodCoords(food) {
+    if (food.lat !== undefined && food.lon !== undefined) {
+      return { lat: food.lat, lon: food.lon };
+    }
+    return this.pixelToLatLon(food.x, food.y);
+  },
+
+  getAgentCoords(agent) {
+    if (agent.lat !== undefined && agent.lon !== undefined) {
+      return { lat: agent.lat, lon: agent.lon };
+    }
+    return this.pixelToLatLon(agent.x, agent.y);
+  },
+
+  isOffScreen(pixel, width, height) {
+    return pixel.x < -50 || pixel.x > width + 50 || pixel.y < -50 || pixel.y > height + 50;
+  },
+
+  // ==========================================================================
+  // Helper: Behavior type detection
+  // ==========================================================================
+
+  getBehaviorType(kills, foodEaten) {
+    if (kills > 0 && kills >= foodEaten * 0.5) return 'carnivore';
+    if (kills > 0) return 'omnivore';
+    return 'herbivore';
+  },
+
+  // ==========================================================================
+  // Drawing: Shapes
+  // ==========================================================================
+
+  drawCircle(ctx, x, y, size) {
+    ctx.beginPath();
+    ctx.arc(x, y, size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  },
+
+  drawTriangle(ctx, x, y, size, direction) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(direction);
+    ctx.beginPath();
+    ctx.moveTo(size * 1.2, 0);  // Point
+    ctx.lineTo(-size * 0.8, -size * 0.8);
+    ctx.lineTo(-size * 0.8, size * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  drawDiamond(ctx, x, y, size, direction) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(direction + Math.PI / 4);
+    ctx.beginPath();
+    ctx.rect(-size * 0.7, -size * 0.7, size * 1.4, size * 1.4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  drawRoundedRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fill();
+  },
+
+  // ==========================================================================
+  // Drawing: Decorators
+  // ==========================================================================
+
+  drawEnergyRing(ctx, x, y, size, energyRatio) {
+    // Outer ring showing energy level
+    const ringRadius = size + 2;
+    const startAngle = -Math.PI / 2;
+    const endAngle = startAngle + (Math.PI * 2 * energyRatio);
+
+    ctx.strokeStyle = `hsla(${120 * energyRatio}, 70%, 50%, 0.6)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, ringRadius, startAngle, endAngle);
+    ctx.stroke();
+  },
+
+  drawChampionAura(ctx, x, y, size, now) {
+    const pulsePhase = (now % 1000) / 1000;
+    const pulseSize = 1 + Math.sin(pulsePhase * Math.PI * 2) * 0.3;
+    const auraRadius = size * 3 * pulseSize;
+
+    const gradient = ctx.createRadialGradient(x, y, size, x, y, auraRadius);
+    gradient.addColorStop(0, 'rgba(255, 215, 0, 0.5)');
+    gradient.addColorStop(0.5, 'rgba(255, 180, 0, 0.2)');
+    gradient.addColorStop(1, 'rgba(255, 215, 0, 0)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, auraRadius, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawAttackGlow(ctx, x, y, size, now) {
+    const pulsePhase = (now % 300) / 300;
+    const intensity = 0.5 + Math.sin(pulsePhase * Math.PI * 2) * 0.3;
+    const glowRadius = size * 2.5;
+
+    const gradient = ctx.createRadialGradient(x, y, size * 0.5, x, y, glowRadius);
+    gradient.addColorStop(0, `rgba(255, 50, 50, ${intensity})`);
+    gradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawSignalAura(ctx, x, y, size, signal) {
+    const intensity = Math.abs(signal - 0.5) * 1.2;
+    const isHigh = signal > 0.5;
+    const color = isHigh ? `rgba(255, 200, 100, ${intensity})` : `rgba(100, 200, 255, ${intensity})`;
+    const glowRadius = size * (1.5 + intensity);
+
+    const gradient = ctx.createRadialGradient(x, y, size * 0.5, x, y, glowRadius);
+    gradient.addColorStop(0, color);
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+    ctx.fill();
+  },
+
+  drawDirectionIndicator(ctx, x, y, size, direction, color) {
+    const len = size * 0.8;
+    const endX = x + Math.cos(direction) * (size + len);
+    const endY = y + Math.sin(direction) * (size + len);
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(direction) * size, y + Math.sin(direction) * size);
+    ctx.lineTo(endX, endY);
+    ctx.stroke();
+  },
+
+  drawKillBadge(ctx, x, y, count) {
+    const badgeSize = 6;
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(x, y, badgeSize, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(count > 9 ? '9+' : count.toString(), x, y);
+    ctx.textAlign = 'start';
+    ctx.textBaseline = 'alphabetic';
   },
 
   destroyed() {
