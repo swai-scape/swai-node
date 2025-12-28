@@ -16,6 +16,8 @@ defmodule SwaiNode.Application do
        repos: Application.fetch_env!(:swai_node, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:swai_node, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: SwaiNode.PubSub},
+      # Road network for street-following agents
+      SwaiNode.Geo.RoadNetwork,
       # Macula mesh client for P2P communication
       SwaiNode.MeshClient,
       # LC event bridge (silo events → Phoenix.PubSub)

@@ -15,6 +15,7 @@ defmodule SwaiNode.Simulation.WorldServer do
 
   alias SwaiNode.Simulation.{AgentBrain, SiloIntegration, SpeciesTracker, Vision}
   alias SwaiNode.Domain.DomainBridge
+  alias SwaiNode.Geo.RoadNetwork
   alias SwaiNode.Worlds
 
   @pubsub SwaiNode.PubSub
@@ -89,6 +90,11 @@ defmodule SwaiNode.Simulation.WorldServer do
   def init(opts) do
     config = Map.merge(@default_config, Map.new(opts))
 
+    # Get geo config for coordinate conversion
+    geo_config = Application.get_env(:swai_node, :geo, [])
+    origin_lat = Keyword.get(geo_config, :latitude, 52.5347)
+    origin_lon = Keyword.get(geo_config, :longitude, 17.5828)
+
     state = %{
       world_id: nil,
       config: config,
@@ -105,7 +111,10 @@ defmodule SwaiNode.Simulation.WorldServer do
       silo_update_tick: 0,
       # Species tracking
       species_info: %{},
-      species_update_tick: 0
+      species_update_tick: 0,
+      # Geo origin for coordinate conversion
+      origin_lat: origin_lat,
+      origin_lon: origin_lon
     }
 
     # Initialize world asynchronously
@@ -119,15 +128,30 @@ defmodule SwaiNode.Simulation.WorldServer do
     {:ok, world} = Worlds.get_or_create_default_world()
     state = %{state | world_id: world.id}
 
+    # Wait for road network to load (with timeout)
+    wait_for_road_network(50, 100)
+
     # Spawn initial population
     state = spawn_initial_population(state)
 
     # Spawn initial food
     state = spawn_initial_food(state)
 
-    Logger.info("[WorldServer] Initialized world #{world.id} with #{map_size(state.agents)} agents")
+    road_status = if RoadNetwork.loaded?(), do: "with roads", else: "without roads"
+    Logger.info("[WorldServer] Initialized world #{world.id} with #{map_size(state.agents)} agents (#{road_status})")
 
     {:noreply, state}
+  end
+
+  # Wait for road network to load with retries
+  defp wait_for_road_network(0, _delay), do: :ok
+  defp wait_for_road_network(retries, delay) do
+    if RoadNetwork.loaded?() do
+      :ok
+    else
+      Process.sleep(delay)
+      wait_for_road_network(retries - 1, delay)
+    end
   end
 
   @impl true
@@ -385,7 +409,7 @@ defmodule SwaiNode.Simulation.WorldServer do
       state.agents
       |> Enum.map(fn {id, agent} ->
         other_agents = state.agents |> Map.delete(id) |> Map.values()
-        updated = update_single_agent(agent, other_agents, state.food, world_size, config)
+        updated = update_single_agent(agent, other_agents, state.food, world_size, state)
         {id, updated}
       end)
       |> Map.new()
@@ -393,7 +417,10 @@ defmodule SwaiNode.Simulation.WorldServer do
     %{state | agents: updated_agents}
   end
 
-  defp update_single_agent(agent, other_agents, food, world_size, _config) do
+  # Base movement speed in meters per tick
+  @base_speed 3.0
+
+  defp update_single_agent(agent, other_agents, food, world_size, state) do
     # Cast vision rays
     vision = Vision.cast_rays(agent, other_agents, food, world_size)
 
@@ -408,25 +435,13 @@ defmodule SwaiNode.Simulation.WorldServer do
     outputs = AgentBrain.evaluate(agent.network, inputs)
     actions = AgentBrain.parse_outputs(outputs)
 
-    # Apply movement
-    {width, height} = world_size
-    new_direction = agent.direction + actions.turn * 0.1
-    move_speed = actions.move * 3.0
-
-    new_x = agent.x + :math.cos(new_direction) * move_speed
-    new_y = agent.y + :math.sin(new_direction) * move_speed
-
-    # Clamp to world bounds
-    new_x = max(@agent_radius, min(width - @agent_radius, new_x))
-    new_y = max(@agent_radius, min(height - @agent_radius, new_y))
+    # Apply road-constrained movement
+    agent = apply_road_movement(agent, actions, world_size, state)
 
     # Update energy (movement cost)
     new_energy = agent.energy - @move_cost
 
     %{agent |
-      x: new_x,
-      y: new_y,
-      direction: new_direction,
       energy: new_energy,
       age: agent.age + 1,
       fitness: agent.fitness + 1,
@@ -435,6 +450,121 @@ defmodule SwaiNode.Simulation.WorldServer do
       signal: actions.signal,
       wants_attack: actions.attack
     }
+  end
+
+  # Road-constrained movement: agents follow paths along roads
+  defp apply_road_movement(agent, actions, world_size, state) do
+    %{config: config} = state
+    # Get geo origin (with defaults for backward compatibility)
+    origin_lat = Map.get(state, :origin_lat, 52.5347)
+    origin_lon = Map.get(state, :origin_lon, 17.5828)
+    {width, height} = world_size
+
+    # Get or create path
+    agent = ensure_path(agent)
+
+    # If still no path (road network not loaded), fall back to free movement
+    case agent.path do
+      [] ->
+        apply_free_movement(agent, actions, width, height)
+
+      [{next_lat, next_lon} | _rest] ->
+        # Convert next waypoint to world coordinates
+        {target_x, target_y} = lat_lon_to_world(next_lat, next_lon, config, origin_lat, origin_lon)
+
+        # Calculate direction to next waypoint
+        dx = target_x - agent.x
+        dy = target_y - agent.y
+        dist = :math.sqrt(dx * dx + dy * dy)
+
+        # Speed controlled by neural network output (0 to max)
+        move_speed = actions.move * @base_speed
+
+        if dist < move_speed do
+          # Reached waypoint - advance to next
+          [_reached | remaining_path] = agent.path
+
+          # Update road_node to the one we just reached
+          new_road_node = RoadNetwork.find_nearest_node(next_lat, next_lon) || agent.road_node
+
+          case remaining_path do
+            [] ->
+              # Path complete - pick new destination
+              %{agent |
+                x: target_x,
+                y: target_y,
+                direction: :math.atan2(dy, dx),
+                path: [],
+                target_node: nil,
+                road_node: new_road_node
+              }
+
+            _ ->
+              %{agent |
+                x: target_x,
+                y: target_y,
+                direction: :math.atan2(dy, dx),
+                path: remaining_path,
+                road_node: new_road_node
+              }
+          end
+        else
+          # Move toward waypoint
+          ratio = move_speed / dist
+          new_x = agent.x + dx * ratio
+          new_y = agent.y + dy * ratio
+
+          %{agent |
+            x: new_x,
+            y: new_y,
+            direction: :math.atan2(dy, dx)
+          }
+        end
+    end
+  end
+
+  # Ensure agent has a path - if not, generate one
+  defp ensure_path(%{path: [_ | _]} = agent), do: agent
+  defp ensure_path(%{road_node: nil} = agent), do: agent
+  defp ensure_path(agent) do
+    # Pick a random destination node and find path
+    case RoadNetwork.random_node() do
+      nil ->
+        agent
+
+      target_node when target_node == agent.road_node ->
+        # Same node, try again with different target
+        case RoadNetwork.random_node() do
+          nil -> agent
+          ^target_node -> agent
+          new_target -> find_and_set_path(agent, new_target)
+        end
+
+      target_node ->
+        find_and_set_path(agent, target_node)
+    end
+  end
+
+  defp find_and_set_path(agent, target_node) do
+    case RoadNetwork.find_path(agent.road_node, target_node) do
+      {:ok, path} when path != [] ->
+        %{agent | target_node: target_node, path: path}
+
+      _ ->
+        # No path found, keep agent stationary until next tick
+        agent
+    end
+  end
+
+  # Fallback free movement when road network not available
+  defp apply_free_movement(agent, actions, _width, _height) do
+    new_direction = agent.direction + actions.turn * 0.1
+    move_speed = actions.move * @base_speed
+
+    new_x = agent.x + :math.cos(new_direction) * move_speed
+    new_y = agent.y + :math.sin(new_direction) * move_speed
+
+    %{agent | x: new_x, y: new_y, direction: new_direction}
   end
 
   # Calculate hearing inputs: signals from the 4 nearest agents
@@ -701,14 +831,38 @@ defmodule SwaiNode.Simulation.WorldServer do
       config.mutation_strength
     )
 
-    # Spawn near parent with random offset
-    offset_x = (:rand.uniform() - 0.5) * 20
-    offset_y = (:rand.uniform() - 0.5) * 20
+    # Get geo config for coordinate conversion
+    geo_config = Application.get_env(:swai_node, :geo, [])
+    origin_lat = Keyword.get(geo_config, :latitude, 52.5347)
+    origin_lon = Keyword.get(geo_config, :longitude, 17.5828)
+
+    # Spawn near parent's road node, or with offset if no road data
+    {x, y, road_node} =
+      case parent[:road_node] do
+        nil ->
+          # No road data, spawn with random offset from parent
+          offset_x = (:rand.uniform() - 0.5) * 20
+          offset_y = (:rand.uniform() - 0.5) * 20
+          {parent.x + offset_x, parent.y + offset_y, nil}
+
+        parent_node ->
+          case RoadNetwork.random_road_point_near_node(parent_node, 20) do
+            {lat, lon, node_id} ->
+              {x, y} = lat_lon_to_world(lat, lon, config, origin_lat, origin_lon)
+              {x, y, node_id}
+
+            nil ->
+              # Fall back to offset from parent
+              offset_x = (:rand.uniform() - 0.5) * 20
+              offset_y = (:rand.uniform() - 0.5) * 20
+              {parent.x + offset_x, parent.y + offset_y, parent_node}
+          end
+      end
 
     %{
       id: nil,  # Will be assigned
-      x: clamp(parent.x + offset_x, @agent_radius, config.width - @agent_radius),
-      y: clamp(parent.y + offset_y, @agent_radius, config.height - @agent_radius),
+      x: x,
+      y: y,
       direction: :rand.uniform() * 2 * :math.pi(),
       energy: 100.0,
       age: 0,
@@ -724,7 +878,10 @@ defmodule SwaiNode.Simulation.WorldServer do
       wants_eat: false,
       wants_reproduce: false,
       wants_attack: false,
-      signal: parent.signal  # Inherit parent's signal initially
+      signal: parent.signal,  # Inherit parent's signal initially
+      road_node: road_node,
+      target_node: nil,
+      path: []
     }
   end
 
@@ -744,18 +901,35 @@ defmodule SwaiNode.Simulation.WorldServer do
 
   defp spawn_food(state) do
     %{config: config, food: food} = state
+    origin_lat = Map.get(state, :origin_lat, 52.5347)
+    origin_lon = Map.get(state, :origin_lon, 17.5828)
 
-    # Spawn food based on spawn rate
+    # Spawn food based on spawn rate - only on streets
     new_food =
       if length(food) < config.max_food and :rand.uniform() < config.food_spawn_rate do
-        x = :rand.uniform() * config.width
-        y = :rand.uniform() * config.height
-        [{x, y, @food_energy} | food]
+        case get_food_road_position(config, origin_lat, origin_lon) do
+          {x, y} -> [{x, y, @food_energy} | food]
+          nil -> food  # No road position available
+        end
       else
         food
       end
 
     %{state | food: new_food}
+  end
+
+  # Get a random road position for food spawning
+  defp get_food_road_position(config, origin_lat, origin_lon) do
+    case RoadNetwork.random_road_point() do
+      {lat, lon, _node_id} ->
+        lat_lon_to_world(lat, lon, config, origin_lat, origin_lon)
+
+      nil ->
+        # Road network not loaded, fall back to random
+        x = :rand.uniform() * config.width
+        y = :rand.uniform() * config.height
+        {x, y}
+    end
   end
 
   # =============================================================================
@@ -765,13 +939,21 @@ defmodule SwaiNode.Simulation.WorldServer do
   defp spawn_initial_population(state) do
     %{config: config} = state
 
+    # Get geo config for origin
+    geo_config = Application.get_env(:swai_node, :geo, [])
+    origin_lat = Keyword.get(geo_config, :latitude, 52.5347)
+    origin_lon = Keyword.get(geo_config, :longitude, 17.5828)
+
     agents =
       1..config.starting_population
       |> Enum.map(fn id ->
+        # Try to spawn on road near origin, fall back to random
+        {x, y, road_node} = get_spawn_position_near_origin(config, origin_lat, origin_lon)
+
         agent = %{
           id: id,
-          x: :rand.uniform() * config.width,
-          y: :rand.uniform() * config.height,
+          x: x,
+          y: y,
           direction: :rand.uniform() * 2 * :math.pi(),
           energy: 100.0,
           age: 0,
@@ -787,7 +969,10 @@ defmodule SwaiNode.Simulation.WorldServer do
           wants_eat: false,
           wants_reproduce: false,
           wants_attack: false,
-          signal: 0.5  # Initial neutral signal
+          signal: 0.5,  # Initial neutral signal
+          road_node: road_node,  # Track which road node agent is near
+          target_node: nil,  # Destination node for pathfinding
+          path: []  # List of {lat, lon} waypoints to follow
         }
         {id, agent}
       end)
@@ -799,14 +984,52 @@ defmodule SwaiNode.Simulation.WorldServer do
     }
   end
 
+  # Get spawn position near origin, using roads if available
+  defp get_spawn_position_near_origin(config, origin_lat, origin_lon) do
+    case RoadNetwork.random_road_point_near(origin_lat, origin_lon, 50) do
+      {lat, lon, road_node} ->
+        # Convert lat/lon to world x/y coordinates
+        {x, y} = lat_lon_to_world(lat, lon, config, origin_lat, origin_lon)
+        {x, y, road_node}
+
+      nil ->
+        # Road network not loaded, fall back to random position near center
+        x = config.width / 2 + (:rand.uniform() - 0.5) * 100
+        y = config.height / 2 + (:rand.uniform() - 0.5) * 100
+        {x, y, nil}
+    end
+  end
+
+  # Convert lat/lon to world coordinates (x, y in pixels)
+  # Origin lat/lon maps to center of world (width/2, height/2)
+  # 1 pixel = 1 meter
+  # No clamping - agents can move anywhere on the road network
+  defp lat_lon_to_world(lat, lon, config, origin_lat, origin_lon) do
+    # Meters per degree
+    meters_per_deg_lat = 111_320
+    meters_per_deg_lon = 111_320 * :math.cos(origin_lat * :math.pi() / 180)
+
+    # Offset from origin in meters
+    offset_x = (lon - origin_lon) * meters_per_deg_lon
+    offset_y = (origin_lat - lat) * meters_per_deg_lat  # Y inverted
+
+    # Convert to world coordinates (origin at center)
+    x = config.width / 2 + offset_x
+    y = config.height / 2 + offset_y
+
+    {x, y}
+  end
+
   defp spawn_initial_food(state) do
     %{config: config} = state
+    origin_lat = Map.get(state, :origin_lat, 52.5347)
+    origin_lon = Map.get(state, :origin_lon, 17.5828)
 
+    # Spawn initial food only on streets
     food =
       1..config.max_food
       |> Enum.map(fn _ ->
-        x = :rand.uniform() * config.width
-        y = :rand.uniform() * config.height
+        {x, y} = get_food_road_position(config, origin_lat, origin_lon)
         {x, y, @food_energy}
       end)
 
@@ -861,7 +1084,9 @@ defmodule SwaiNode.Simulation.WorldServer do
           peaceful_encounters: state.stats.peaceful_encounters,
           diplomatic_successes: state.stats.diplomatic_successes,
           best_fitness: best_fit,
-          avg_fitness: avg_fit
+          avg_fitness: avg_fit,
+          cooperation_rate: calculate_rate(state.stats.peaceful_encounters, state.stats.encounters),
+          diplomacy_rate: calculate_rate(state.stats.diplomatic_successes, state.stats.peaceful_encounters)
         },
         # Species info
         species: species_stats,
@@ -904,6 +1129,7 @@ defmodule SwaiNode.Simulation.WorldServer do
       energy: agent.energy,
       fitness: agent.fitness,
       generation: agent.generation,
+      age: Map.get(agent, :age, 0),
       signal: Map.get(agent, :signal, 0.5),
       species_id: Map.get(agent, :species_id, "gen0"),
       wants_attack: Map.get(agent, :wants_attack, false),
@@ -914,7 +1140,6 @@ defmodule SwaiNode.Simulation.WorldServer do
   defp safe_avg([]), do: 0.0
   defp safe_avg(list), do: Enum.sum(list) / length(list)
 
-  defp clamp(value, min_val, max_val) do
-    value |> max(min_val) |> min(max_val)
-  end
+  defp calculate_rate(_numerator, 0), do: 0.0
+  defp calculate_rate(numerator, denominator), do: numerator / denominator
 end

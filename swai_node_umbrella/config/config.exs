@@ -90,6 +90,23 @@ config :macula,
   tls_mode: :development
 
 # =============================================================================
+# Geographic Configuration (World Map)
+# =============================================================================
+# Each node has a geographic location where its agents originate.
+# Coordinates are in WGS84 (standard GPS coordinates).
+
+config :swai_node, :geo,
+  # Node's geographic location (Gniezno, Poland - ul. Św. Michała 25)
+  longitude: 17.5828,
+  latitude: 52.5347,
+  # Map zoom level (higher = more zoomed in, 16 = ~800m visible)
+  default_zoom: 16,
+  # Road network radius in meters (fetched from OpenStreetMap)
+  road_network_radius_m: 500,
+  # Auto-load road network on startup
+  auto_load_roads: true
+
+# =============================================================================
 # erl_esdb - BEAM-native Event Store
 # =============================================================================
 # Local event store for CQRS/Event Sourcing.

@@ -27,11 +27,13 @@ import topbar from "../vendor/topbar"
 
 // Custom hooks
 import {WorldCanvas} from "./hooks/world_canvas"
+import {WorldMap} from "./hooks/world_map"
 import {EChartsHook} from "./hooks/echarts_hook"
 
 const Hooks = {
   ...colocatedHooks,
   WorldCanvas,
+  WorldMap,
   EChartsHook
 }
 

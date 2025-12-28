@@ -17,6 +17,7 @@ defmodule SwaiNode.Simulation.WorldSimulator do
   """
 
   alias SwaiNode.Simulation.{AgentBrain, Vision}
+  alias SwaiNode.Geo.RoadNetwork
 
   # Simulation constants
   # TODO: Wire to ecological_silo for dynamic tuning
@@ -285,20 +286,54 @@ defmodule SwaiNode.Simulation.WorldSimulator do
     end
   end
 
-  # Spawn food if below max
+  # Spawn food if below max - only on streets if road network available
   defp spawn_food(state) do
     %{food: food, config: config} = state
 
     new_food =
       if length(food) < config.max_food and :rand.uniform() < config.food_spawn_rate do
-        x = :rand.uniform() * config.width
-        y = :rand.uniform() * config.height
-        [{x, y, @food_energy} | food]
+        case get_food_road_position(config) do
+          {x, y} -> [{x, y, @food_energy} | food]
+          nil -> food
+        end
       else
         food
       end
 
     %{state | food: new_food}
+  end
+
+  # Get a random road position for food - uses road network if available
+  defp get_food_road_position(config) do
+    geo_config = Application.get_env(:swai_node, :geo, [])
+    origin_lat = Keyword.get(geo_config, :latitude, 52.5347)
+    origin_lon = Keyword.get(geo_config, :longitude, 17.5828)
+
+    case RoadNetwork.random_road_point() do
+      {lat, lon, _node_id} ->
+        lat_lon_to_world(lat, lon, config, origin_lat, origin_lon)
+
+      nil ->
+        # Road network not loaded, fall back to random
+        x = :rand.uniform() * config.width
+        y = :rand.uniform() * config.height
+        {x, y}
+    end
+  end
+
+  # Convert lat/lon to world coordinates (same as WorldServer)
+  # No clamping - entities can be anywhere on the road network
+  defp lat_lon_to_world(lat, lon, config, origin_lat, origin_lon) do
+    meters_per_deg_lat = 111_320
+    meters_per_deg_lon = 111_320 * :math.cos(origin_lat * :math.pi() / 180)
+
+    offset_x = (lon - origin_lon) * meters_per_deg_lon
+    offset_y = (origin_lat - lat) * meters_per_deg_lat
+
+    x = config.width / 2 + offset_x
+    y = config.height / 2 + offset_y
+
+    {x, y}
   end
 
   # ==========================================================================
