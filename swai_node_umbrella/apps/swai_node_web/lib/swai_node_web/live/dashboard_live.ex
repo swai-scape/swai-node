@@ -59,6 +59,7 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:reward_breakdown, %{survival: 0, eating: 0, killing: 0, cooperation: 0, diplomacy: 0})
       # Coevolution tracking (multi-species)
       |> assign(:coevolution_fitness_history, [])
+      |> assign(:coevolution_running, false)
       # Culture tracking
       |> assign(:diversity_history, [])
       |> assign(:signal_distribution, List.duplicate(0, 10))
@@ -280,6 +281,11 @@ defmodule SwaiNodeWeb.DashboardLive do
   end
 
   @impl true
+  def handle_info(:coevolution_complete, socket) do
+    {:noreply, assign(socket, :coevolution_running, false)}
+  end
+
+  @impl true
   def handle_info(_msg, socket), do: {:noreply, socket}
 
   # ==========================================================================
@@ -325,11 +331,39 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:diversity_history, [])
       |> assign(:fitness_history, [])
       |> assign(:coevolution_fitness_history, [])
+      |> assign(:coevolution_running, false)
       |> assign(:events, [])
       |> assign(:champion_fitness, 0.0)
       |> assign(:training_stats, %{generation: 0, best_fitness: 0.0, avg_fitness: 0.0, population: 0})
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("run_coevolution", _params, socket) do
+    # Don't start if already running
+    if socket.assigns.coevolution_running do
+      {:noreply, socket}
+    else
+      # Clear previous history and start coevolution in background
+      socket = socket
+        |> assign(:coevolution_running, true)
+        |> assign(:coevolution_fitness_history, [])
+
+      # Run coevolution in a Task (non-blocking)
+      Task.start(fn ->
+        SwaiNode.DomainSDK.TestCoevolution.run_with_charts(
+          generations: 15,
+          forager_population: 10,
+          predator_population: 5,
+          episodes_per_eval: 2
+        )
+        # Signal completion
+        Phoenix.PubSub.broadcast(@pubsub, @coevolution_topic, :coevolution_complete)
+      end)
+
+      {:noreply, socket}
+    end
   end
 
   # ==========================================================================
@@ -549,6 +583,9 @@ defmodule SwaiNodeWeb.DashboardLive do
               </button>
               <button phx-click="reset" class="px-3 py-1 rounded text-sm font-medium bg-red-600 hover:bg-red-500">
                 Reset
+              </button>
+              <button phx-click="run_coevolution" class={"px-3 py-1 rounded text-sm font-medium #{if @coevolution_running, do: "bg-purple-800 cursor-not-allowed", else: "bg-purple-600 hover:bg-purple-500"}"} disabled={@coevolution_running}>
+                {if @coevolution_running, do: "🧬 Running...", else: "🧬 Coevolve"}
               </button>
             </div>
           </div>
