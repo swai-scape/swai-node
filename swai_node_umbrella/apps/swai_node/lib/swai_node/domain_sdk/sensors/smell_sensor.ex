@@ -10,18 +10,15 @@ defmodule SwaiNode.DomainSDK.Sensors.SmellSensor do
   Total: 3 input values
   """
 
-  @behaviour :agent_sensor
+  # Implements :agent_sensor behaviour (Erlang)
 
   @channels 3
   @smell_radius 5
 
-  @impl :agent_sensor
   def name, do: <<"smell">>
 
-  @impl :agent_sensor
   def input_count, do: @channels
 
-  @impl :agent_sensor
   def read(agent_state, env_state) do
     hex = Map.get(agent_state, :hex, {0, 0})
     food = Map.get(env_state, :food, %{})

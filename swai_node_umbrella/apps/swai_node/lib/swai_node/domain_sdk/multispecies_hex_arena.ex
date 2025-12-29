@@ -33,7 +33,7 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
   4. Terminal when max ticks or all of one species dead
   """
 
-  @behaviour :multispecies_environment
+  # Implements :multispecies_environment behaviour (Erlang)
 
   alias SwaiNode.Simulation.{Hex, HexMaze}
 
@@ -64,13 +64,10 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
 
   # Callbacks
 
-  @impl :multispecies_environment
   def name, do: <<"multispecies_hex_arena">>
 
-  @impl :multispecies_environment
   def supported_species, do: [:forager, :predator]
 
-  @impl :multispecies_environment
   def init(config) do
     arena_radius = Map.get(config, :arena_radius, @default_arena_radius)
     max_ticks = Map.get(config, :max_ticks, @default_max_ticks)
@@ -102,7 +99,6 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
     {:ok, env_state}
   end
 
-  @impl :multispecies_environment
   def spawn_agent(agent_id, species, env_state) do
     config = get_species_config(species, env_state)
     spawn_zone = Map.get(config, :spawn_zone, :center)
@@ -138,7 +134,6 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
     {:ok, agent_state, updated_env}
   end
 
-  @impl :multispecies_environment
   def tick(agent_state, env_state) do
     new_tick = Map.get(env_state, :tick, 0) + 1
     env_state = Map.put(env_state, :tick, new_tick)
@@ -164,7 +159,6 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
     {:ok, agent_state, env_state}
   end
 
-  @impl :multispecies_environment
   def apply_action(action, agent_state, env_state) do
     species = Map.get(agent_state, :species, :forager)
 
@@ -181,7 +175,6 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
     {:ok, agent_state, env_state}
   end
 
-  @impl :multispecies_environment
   def handle_interaction(agent1, agent2, env_state) do
     species1 = Map.get(agent1, :species)
     species2 = Map.get(agent2, :species)
@@ -199,16 +192,11 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
     end
   end
 
-  @impl :multispecies_environment
   def interaction_type(:predator, :forager), do: :hunt
-  @impl :multispecies_environment
   def interaction_type(:forager, :predator), do: :prey
-  @impl :multispecies_environment
   def interaction_type(same, same), do: :compete
-  @impl :multispecies_environment
   def interaction_type(_, _), do: :ignore
 
-  @impl :multispecies_environment
   def is_terminal(agent_state, env_state) do
     energy = Map.get(agent_state, :energy, 0)
     alive = Map.get(agent_state, :alive, true)
@@ -218,7 +206,6 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
     not alive or energy <= 0 or tick >= max_ticks
   end
 
-  @impl :multispecies_environment
   def extract_metrics(agent_state, env_state) do
     %{
       species: Map.get(agent_state, :species),
@@ -233,7 +220,6 @@ defmodule SwaiNode.DomainSDK.MultiSpeciesHexArena do
     }
   end
 
-  @impl :multispecies_environment
   def extract_species_metrics(species, agent_states, env_state) do
     alive = Enum.filter(agent_states, &Map.get(&1, :alive, true))
     dead = Enum.filter(agent_states, &(not Map.get(&1, :alive, true)))

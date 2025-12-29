@@ -8,17 +8,14 @@ defmodule SwaiNode.DomainSDK.Actuators.SignalActuator do
   Total: 1 output value
   """
 
-  @behaviour :agent_actuator
+  # Implements :agent_actuator behaviour (Erlang)
 
   @outputs 1
 
-  @impl :agent_actuator
   def name, do: <<"signal">>
 
-  @impl :agent_actuator
   def output_count, do: @outputs
 
-  @impl :agent_actuator
   def act([signal_raw], _agent_state, _env_state) do
     # Clamp signal to [0, 1]
     signal = signal_raw |> max(0.0) |> min(1.0)

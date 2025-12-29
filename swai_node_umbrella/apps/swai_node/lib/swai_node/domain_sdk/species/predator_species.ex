@@ -39,7 +39,7 @@ defmodule SwaiNode.DomainSDK.Species.PredatorSpecies do
   - Hunt efficiency (kills per energy spent)
   """
 
-  @behaviour :agent_species
+  # Implements :agent_species behaviour (Erlang)
 
   alias SwaiNode.DomainSDK.Sensors.{
     VisionSensor,
@@ -62,34 +62,27 @@ defmodule SwaiNode.DomainSDK.Species.PredatorSpecies do
 
   # Callbacks
 
-  @impl :agent_species
   def name, do: <<"predator">>
 
-  @impl :agent_species
   def version, do: <<"1.0.0">>
 
-  @impl :agent_species
   def network_topology do
     # 35 inputs -> [48, 24] hidden -> 12 outputs
     {35, [48, 24], 12}
   end
 
-  @impl :agent_species
   def sensors do
     [VisionSensor, HearingSensor, HuntingSensor, ProprioceptionSensor, StateSensor]
   end
 
-  @impl :agent_species
   def actuators do
     [MovementActuator, AttackActuator, StealthActuator, SprintActuator, SignalActuator, ConsumeActuator]
   end
 
-  @impl :agent_species
   def evaluator do
     PredatorFitnessEvaluator
   end
 
-  @impl :agent_species
   def spawn_config do
     %{
       energy: 200.0,
@@ -108,12 +101,10 @@ defmodule SwaiNode.DomainSDK.Species.PredatorSpecies do
     }
   end
 
-  @impl :agent_species
   def subspeciation_threshold do
     2.0  # Higher threshold - more convergent (hunting is specialized)
   end
 
-  @impl :agent_species
   def mutation_config do
     %{
       mutation_rate: 0.15,  # Higher mutation - need to adapt to prey

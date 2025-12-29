@@ -19,16 +19,14 @@ defmodule SwaiNode.DomainSDK.Evaluators.ForagerFitnessEvaluator do
   ```
   """
 
-  @behaviour :agent_evaluator
+  # Implements :agent_evaluator behaviour (Erlang)
 
   @food_weight 150.0
   @survival_weight 0.1
   @efficiency_weight 50.0
 
-  @impl :agent_evaluator
   def name, do: <<"forager_fitness">>
 
-  @impl :agent_evaluator
   def calculate_fitness(metrics) when is_map(metrics) do
     food = get_metric(metrics, :food_eaten, 0)
     ticks = get_metric(metrics, :ticks_survived, 0)
@@ -43,7 +41,6 @@ defmodule SwaiNode.DomainSDK.Evaluators.ForagerFitnessEvaluator do
 
   def calculate_fitness(_), do: 0.0
 
-  @impl :agent_evaluator
   def fitness_components(metrics) when is_map(metrics) do
     food = get_metric(metrics, :food_eaten, 0)
     ticks = get_metric(metrics, :ticks_survived, 0)

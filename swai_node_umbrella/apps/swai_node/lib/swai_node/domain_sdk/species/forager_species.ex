@@ -33,7 +33,7 @@ defmodule SwaiNode.DomainSDK.Species.ForagerSpecies do
   - Efficiency (food per movement)
   """
 
-  @behaviour :agent_species
+  # Implements :agent_species behaviour (Erlang)
 
   alias SwaiNode.DomainSDK.Sensors.{
     VisionSensor,
@@ -52,34 +52,27 @@ defmodule SwaiNode.DomainSDK.Species.ForagerSpecies do
 
   # Callbacks
 
-  @impl :agent_species
   def name, do: <<"forager">>
 
-  @impl :agent_species
   def version, do: <<"1.0.0">>
 
-  @impl :agent_species
   def network_topology do
     # 29 inputs -> [32, 16] hidden -> 9 outputs
     {29, [32, 16], 9}
   end
 
-  @impl :agent_species
   def sensors do
     [VisionSensor, HearingSensor, SmellSensor, StateSensor]
   end
 
-  @impl :agent_species
   def actuators do
     [MovementActuator, SignalActuator, ForageActuator]
   end
 
-  @impl :agent_species
   def evaluator do
     ForagerFitnessEvaluator
   end
 
-  @impl :agent_species
   def spawn_config do
     %{
       energy: 150.0,
@@ -93,13 +86,11 @@ defmodule SwaiNode.DomainSDK.Species.ForagerSpecies do
     }
   end
 
-  @impl :agent_species
   def subspeciation_threshold do
     1.5  # Moderate - allows behavioral diversity
   end
 
   # Optional mutation config
-  @impl :agent_species
   def mutation_config do
     %{
       mutation_rate: 0.1,

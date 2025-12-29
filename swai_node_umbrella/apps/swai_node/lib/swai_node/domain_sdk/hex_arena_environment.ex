@@ -23,7 +23,7 @@ defmodule SwaiNode.DomainSDK.HexArenaEnvironment do
   | food_spawn_rate  | 0.8     | Food spawn probability/tick    |
   """
 
-  @behaviour :agent_environment
+  # Implements :agent_environment behaviour (Erlang)
 
   alias SwaiNode.Simulation.{Hex, HexMaze}
 
@@ -39,10 +39,8 @@ defmodule SwaiNode.DomainSDK.HexArenaEnvironment do
   @default_move_cost 0.3
   @default_eat_gain 40.0
 
-  @impl :agent_environment
   def name, do: <<"hex_arena">>
 
-  @impl :agent_environment
   def init(config) do
     arena_radius = Map.get(config, :arena_radius, @default_arena_radius)
     max_ticks = Map.get(config, :max_ticks, @default_max_ticks)
@@ -76,7 +74,6 @@ defmodule SwaiNode.DomainSDK.HexArenaEnvironment do
     {:ok, env_state}
   end
 
-  @impl :agent_environment
   def spawn_agent(agent_id, env_state) do
     starting_energy = Map.get(env_state, :starting_energy, @default_starting_energy)
 
@@ -96,7 +93,6 @@ defmodule SwaiNode.DomainSDK.HexArenaEnvironment do
     {:ok, agent_state, updated_env}
   end
 
-  @impl :agent_environment
   def tick(agent_state, env_state) do
     new_tick = Map.get(env_state, :tick, 0) + 1
     env_state = Map.put(env_state, :tick, new_tick)
@@ -104,7 +100,6 @@ defmodule SwaiNode.DomainSDK.HexArenaEnvironment do
     {:ok, agent_state, env_state}
   end
 
-  @impl :agent_environment
   def apply_action(action, agent_state, env_state) do
     # Handle composite actions from multiple actuators
     agent_state = apply_movement(action, agent_state, env_state)
@@ -118,7 +113,6 @@ defmodule SwaiNode.DomainSDK.HexArenaEnvironment do
     {:ok, agent_state, env_state}
   end
 
-  @impl :agent_environment
   def is_terminal(agent_state, env_state) do
     energy = Map.get(agent_state, :energy, 0)
     tick = Map.get(env_state, :tick, 0)
@@ -126,7 +120,6 @@ defmodule SwaiNode.DomainSDK.HexArenaEnvironment do
     energy <= 0 or tick >= max_ticks
   end
 
-  @impl :agent_environment
   def extract_metrics(agent_state, env_state) do
     %{
       ticks_survived: Map.get(agent_state, :age, 0),

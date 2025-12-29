@@ -8,17 +8,14 @@ defmodule SwaiNode.DomainSDK.Sensors.HearingSensor do
   Total: 4 input values
   """
 
-  @behaviour :agent_sensor
+  # Implements :agent_sensor behaviour (Erlang)
 
   @channels 4
 
-  @impl :agent_sensor
   def name, do: <<"hearing">>
 
-  @impl :agent_sensor
   def input_count, do: @channels
 
-  @impl :agent_sensor
   def read(agent_state, env_state) do
     hex = Map.get(agent_state, :hex, {0, 0})
     agent_id = Map.get(agent_state, :id)

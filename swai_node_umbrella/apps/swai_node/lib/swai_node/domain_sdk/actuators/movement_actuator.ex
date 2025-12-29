@@ -11,18 +11,15 @@ defmodule SwaiNode.DomainSDK.Actuators.MovementActuator do
   Total: 7 output values
   """
 
-  @behaviour :agent_actuator
+  # Implements :agent_actuator behaviour (Erlang)
 
   @outputs 7
   @stay_penalty 0.2
 
-  @impl :agent_actuator
   def name, do: <<"movement">>
 
-  @impl :agent_actuator
   def output_count, do: @outputs
 
-  @impl :agent_actuator
   def act(outputs, _agent_state, _env_state) when length(outputs) == @outputs do
     # Apply stay penalty to discourage not moving
     adjusted = apply_stay_penalty(outputs)

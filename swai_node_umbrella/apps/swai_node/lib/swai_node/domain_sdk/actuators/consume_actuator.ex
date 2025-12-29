@@ -14,17 +14,14 @@ defmodule SwaiNode.DomainSDK.Actuators.ConsumeActuator do
   - Stopping to consume for energy recovery
   """
 
-  @behaviour :agent_actuator
+  # Implements :agent_actuator behaviour (Erlang)
 
   @consume_threshold 0.3
 
-  @impl :agent_actuator
   def name, do: <<"consume">>
 
-  @impl :agent_actuator
   def output_count, do: 1
 
-  @impl :agent_actuator
   def act([consume_output], _agent_state, _env_state) do
     consuming = consume_output >= @consume_threshold
 

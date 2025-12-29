@@ -14,15 +14,12 @@ defmodule SwaiNode.DomainSDK.ForagerAgentDefinition do
   - **Outputs (9)**: Movement (7) + Signal (1) + Attack (1)
   """
 
-  @behaviour :agent_definition
+  # Implements :agent_definition behaviour (Erlang)
 
-  @impl :agent_definition
   def name, do: <<"forager_agent">>
 
-  @impl :agent_definition
   def version, do: <<"1.0.0">>
 
-  @impl :agent_definition
   def network_topology do
     # {Inputs, HiddenLayers, Outputs}
     {29, [32, 16], 9}

@@ -12,17 +12,14 @@ defmodule SwaiNode.DomainSDK.Actuators.StealthActuator do
   - Continuous energy cost while active
   """
 
-  @behaviour :agent_actuator
+  # Implements :agent_actuator behaviour (Erlang)
 
   @stealth_threshold 0.3
 
-  @impl :agent_actuator
   def name, do: <<"stealth">>
 
-  @impl :agent_actuator
   def output_count, do: 1
 
-  @impl :agent_actuator
   def act([stealth_output], _agent_state, _env_state) do
     stealthing = stealth_output >= @stealth_threshold
 

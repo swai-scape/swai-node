@@ -8,18 +8,15 @@ defmodule SwaiNode.DomainSDK.Actuators.AttackActuator do
   Total: 1 output value
   """
 
-  @behaviour :agent_actuator
+  # Implements :agent_actuator behaviour (Erlang)
 
   @outputs 1
   @attack_threshold 0.5
 
-  @impl :agent_actuator
   def name, do: <<"attack">>
 
-  @impl :agent_actuator
   def output_count, do: @outputs
 
-  @impl :agent_actuator
   def act([attack_raw], _agent_state, _env_state) do
     attack = attack_raw > @attack_threshold
 

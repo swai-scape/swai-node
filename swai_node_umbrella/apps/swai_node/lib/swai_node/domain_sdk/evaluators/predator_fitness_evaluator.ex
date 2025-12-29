@@ -24,17 +24,15 @@ defmodule SwaiNode.DomainSDK.Evaluators.PredatorFitnessEvaluator do
   failed attacks (precision hunting).
   """
 
-  @behaviour :agent_evaluator
+  # Implements :agent_evaluator behaviour (Erlang)
 
   @kill_weight 200.0
   @energy_weight 0.5
   @survival_weight 0.05
   @efficiency_weight 100.0
 
-  @impl :agent_evaluator
   def name, do: <<"predator_fitness">>
 
-  @impl :agent_evaluator
   def calculate_fitness(metrics) when is_map(metrics) do
     kills = get_metric(metrics, :kills, 0)
     energy_gained = get_metric(metrics, :energy_from_kills, 0)
@@ -57,7 +55,6 @@ defmodule SwaiNode.DomainSDK.Evaluators.PredatorFitnessEvaluator do
 
   def calculate_fitness(_), do: 0.0
 
-  @impl :agent_evaluator
   def fitness_components(metrics) when is_map(metrics) do
     kills = get_metric(metrics, :kills, 0)
     energy_gained = get_metric(metrics, :energy_from_kills, 0)

@@ -16,17 +16,14 @@ defmodule SwaiNode.DomainSDK.Sensors.HuntingSensor do
   - Prioritize weak/slow targets
   """
 
-  @behaviour :agent_sensor
+  # Implements :agent_sensor behaviour (Erlang)
 
   @max_hunt_range 10
 
-  @impl :agent_sensor
   def name, do: <<"hunting">>
 
-  @impl :agent_sensor
   def input_count, do: 6
 
-  @impl :agent_sensor
   def read(agent_state, env_state) do
     my_hex = Map.get(agent_state, :hex, {0, 0})
     my_species = Map.get(agent_state, :species, :predator)

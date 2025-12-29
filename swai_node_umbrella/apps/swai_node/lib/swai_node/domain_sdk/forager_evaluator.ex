@@ -20,16 +20,14 @@ defmodule SwaiNode.DomainSDK.ForagerEvaluator do
   Survival is weighted low to discourage passive "hiding" strategies.
   """
 
-  @behaviour :agent_evaluator
+  # Implements :agent_evaluator behaviour (Erlang)
 
   @survival_weight 0.1
   @food_weight 150.0
   @kill_weight 100.0
 
-  @impl :agent_evaluator
   def name, do: <<"forager_fitness">>
 
-  @impl :agent_evaluator
   def calculate_fitness(metrics) when is_map(metrics) do
     ticks = get_metric(metrics, :ticks_survived, 0)
     food = get_metric(metrics, :food_eaten, 0)
@@ -40,7 +38,6 @@ defmodule SwaiNode.DomainSDK.ForagerEvaluator do
 
   def calculate_fitness(_), do: 0.0
 
-  @impl :agent_evaluator
   def fitness_components(metrics) when is_map(metrics) do
     ticks = get_metric(metrics, :ticks_survived, 0)
     food = get_metric(metrics, :food_eaten, 0)

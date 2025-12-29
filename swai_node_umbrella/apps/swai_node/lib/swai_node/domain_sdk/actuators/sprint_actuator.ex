@@ -12,17 +12,14 @@ defmodule SwaiNode.DomainSDK.Actuators.SprintActuator do
   - Trade energy for speed in pursuit
   """
 
-  @behaviour :agent_actuator
+  # Implements :agent_actuator behaviour (Erlang)
 
   @sprint_threshold 0.5
 
-  @impl :agent_actuator
   def name, do: <<"sprint">>
 
-  @impl :agent_actuator
   def output_count, do: 1
 
-  @impl :agent_actuator
   def act([sprint_output], agent_state, _env_state) do
     energy = Map.get(agent_state, :energy, 0)
     sprint_cost = Map.get(agent_state, :sprint_cost, 1.0)

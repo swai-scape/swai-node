@@ -10,19 +10,16 @@ defmodule SwaiNode.DomainSDK.Sensors.VisionSensor do
   Total: 18 input values (6 rays × 3 channels)
   """
 
-  @behaviour :agent_sensor
+  # Implements :agent_sensor behaviour (Erlang)
 
   alias SwaiNode.Simulation.HexVision
 
   @channels 18  # 6 rays × 3 channels
 
-  @impl :agent_sensor
   def name, do: <<"vision">>
 
-  @impl :agent_sensor
   def input_count, do: @channels
 
-  @impl :agent_sensor
   def read(agent_state, env_state) do
     hex = Map.get(agent_state, :hex, {0, 0})
     food = Map.get(env_state, :food, %{})
