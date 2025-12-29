@@ -1,10 +1,15 @@
 defmodule SwaiNode.DomainSDK.TestCoevolution do
   @moduledoc """
   Test module for running multi-species coevolution with fitness tracking and visualization.
+
+  Broadcasts fitness updates to `coevolution:fitness` topic for live dashboard display.
   """
 
   alias SwaiNode.DomainSDK.Species.{ForagerSpecies, PredatorSpecies}
   alias SwaiNode.DomainSDK.MultiSpeciesHexArena
+
+  @pubsub SwaiNode.PubSub
+  @coevolution_topic "coevolution:fitness"
 
   @doc """
   Run coevolution with species-specific fitness tracking and charts.
@@ -82,6 +87,9 @@ defmodule SwaiNode.DomainSDK.TestCoevolution do
         predator: update_history(hist.predator, predator_fitness)
       }
 
+      # Broadcast to dashboard
+      broadcast_generation(gen, new_hist)
+
       # Print generation summary
       IO.puts("\rGen #{String.pad_leading("#{gen}", 3)}: " <>
         "Forager [best: #{format_num(hd(new_hist.forager.best))}, avg: #{format_num(hd(new_hist.forager.avg))}] | " <>
@@ -93,6 +101,22 @@ defmodule SwaiNode.DomainSDK.TestCoevolution do
 
       {reg, new_hist}
     end)
+  end
+
+  defp broadcast_generation(generation, history) do
+    # Get the latest values (first element since we prepend)
+    forager_best = hd(history.forager.best)
+    forager_avg = hd(history.forager.avg)
+    predator_best = hd(history.predator.best)
+    predator_avg = hd(history.predator.avg)
+
+    event = {:coevolution_generation, %{
+      generation: generation,
+      forager: %{best: forager_best, avg: forager_avg},
+      predator: %{best: predator_best, avg: predator_avg}
+    }}
+
+    Phoenix.PubSub.broadcast(@pubsub, @coevolution_topic, event)
   end
 
   defp evaluate_species(registry, species_id, species_module, episodes) do

@@ -20,6 +20,7 @@ defmodule SwaiNodeWeb.DashboardLive do
   @world_topic "world:state"
   @training_topic "training:events"
   @agent_moved_topic "agent:moved"
+  @coevolution_topic "coevolution:fitness"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -27,6 +28,7 @@ defmodule SwaiNodeWeb.DashboardLive do
       Phoenix.PubSub.subscribe(@pubsub, @world_topic)
       Phoenix.PubSub.subscribe(@pubsub, @training_topic)
       Phoenix.PubSub.subscribe(@pubsub, @agent_moved_topic)
+      Phoenix.PubSub.subscribe(@pubsub, @coevolution_topic)
     end
 
     # Get initial state from both servers
@@ -55,6 +57,8 @@ defmodule SwaiNodeWeb.DashboardLive do
       # Fitness tracking
       |> assign(:fitness_history, [])
       |> assign(:reward_breakdown, %{survival: 0, eating: 0, killing: 0, cooperation: 0, diplomacy: 0})
+      # Coevolution tracking (multi-species)
+      |> assign(:coevolution_fitness_history, [])
       # Culture tracking
       |> assign(:diversity_history, [])
       |> assign(:signal_distribution, List.duplicate(0, 10))
@@ -231,6 +235,7 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:training_running, false)
       |> assign(:fitness_history, [])
       |> assign(:diversity_history, [])
+      |> assign(:coevolution_fitness_history, [])
       |> assign(:events, [])
       |> assign(:champion_fitness, 0.0)
       |> assign(:training_stats, %{generation: 0, best_fitness: 0.0, avg_fitness: 0.0, population: 0})
@@ -246,6 +251,31 @@ defmodule SwaiNodeWeb.DashboardLive do
       socket
       |> assign(:events, events)
       |> push_event("evolution_event", %{type: "speciation", data: species_info})
+    {:noreply, socket}
+  end
+
+  # ==========================================================================
+  # Coevolution Events (multi-species fitness tracking)
+  # ==========================================================================
+
+  @impl true
+  def handle_info({:coevolution_generation, gen_data}, socket) do
+    # gen_data: %{generation: N, forager: %{best: F, avg: A}, predator: %{best: F, avg: A}}
+    point = %{
+      generation: gen_data.generation,
+      forager_best: gen_data.forager.best,
+      forager_avg: gen_data.forager.avg,
+      predator_best: gen_data.predator.best,
+      predator_avg: gen_data.predator.avg
+    }
+
+    coevolution_history = [point | socket.assigns.coevolution_fitness_history] |> Enum.take(100)
+
+    socket =
+      socket
+      |> assign(:coevolution_fitness_history, coevolution_history)
+      |> push_event("update-chart-coevolution-chart", %{options: build_coevolution_chart(coevolution_history)})
+
     {:noreply, socket}
   end
 
@@ -294,6 +324,7 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:type_history, [])
       |> assign(:diversity_history, [])
       |> assign(:fitness_history, [])
+      |> assign(:coevolution_fitness_history, [])
       |> assign(:events, [])
       |> assign(:champion_fitness, 0.0)
       |> assign(:training_stats, %{generation: 0, best_fitness: 0.0, avg_fitness: 0.0, population: 0})
@@ -359,6 +390,33 @@ defmodule SwaiNodeWeb.DashboardLive do
       yAxis: %{type: "value", min: 0, max: 1, axisLabel: %{fontSize: 9}},
       series: [
         %{name: "Diversity", type: "line", data: values, smooth: true, lineStyle: %{width: 2}, showSymbol: false, areaStyle: %{opacity: 0.2}, itemStyle: %{color: "#8b5cf6"}}
+      ]
+    }
+  end
+
+  defp build_coevolution_chart(history) do
+    reversed = Enum.reverse(history)
+    generations = Enum.map(reversed, & &1.generation)
+    forager_best = Enum.map(reversed, & &1.forager_best)
+    forager_avg = Enum.map(reversed, & &1.forager_avg)
+    predator_best = Enum.map(reversed, & &1.predator_best)
+    predator_avg = Enum.map(reversed, & &1.predator_avg)
+
+    %{
+      animation: false,
+      grid: %{left: 35, right: 5, top: 25, bottom: 20},
+      legend: %{
+        data: ["Forager Best", "Forager Avg", "Predator Best", "Predator Avg"],
+        top: 0,
+        textStyle: %{fontSize: 8, color: "#9ca3af"}
+      },
+      xAxis: %{type: "category", data: generations, axisLabel: %{fontSize: 9, show: false}},
+      yAxis: %{type: "value", axisLabel: %{fontSize: 9}},
+      series: [
+        %{name: "Forager Best", type: "line", data: forager_best, smooth: true, lineStyle: %{width: 2}, showSymbol: false, itemStyle: %{color: "#22c55e"}},
+        %{name: "Forager Avg", type: "line", data: forager_avg, smooth: true, lineStyle: %{width: 1, type: "dashed"}, showSymbol: false, itemStyle: %{color: "#22c55e"}, opacity: 0.6},
+        %{name: "Predator Best", type: "line", data: predator_best, smooth: true, lineStyle: %{width: 2}, showSymbol: false, itemStyle: %{color: "#ef4444"}},
+        %{name: "Predator Avg", type: "line", data: predator_avg, smooth: true, lineStyle: %{width: 1, type: "dashed"}, showSymbol: false, itemStyle: %{color: "#ef4444"}, opacity: 0.6}
       ]
     }
   end
@@ -684,6 +742,15 @@ defmodule SwaiNodeWeb.DashboardLive do
   defp charts_panel(assigns) do
     ~H"""
     <div class="flex-1 p-4 overflow-y-auto space-y-4">
+      <!-- Coevolution Fitness Chart -->
+      <div class="bg-gray-800 rounded-lg p-3">
+        <div class="text-xs text-gray-500 mb-2 flex items-center gap-2">
+          <span>🧬</span>
+          <span>Coevolution: Forager vs Predator</span>
+        </div>
+        <div id="coevolution-chart" phx-hook="EChart" phx-update="ignore" class="h-32"></div>
+      </div>
+
       <!-- Fitness Chart -->
       <div class="bg-gray-800 rounded-lg p-3">
         <div class="text-xs text-gray-500 mb-2">Fitness Over Time</div>
