@@ -303,13 +303,13 @@ defmodule SwaiNode.Simulation.WorldSimulator do
     %{state | food: new_food}
   end
 
-  # Get a random road position for food - uses road network if available
+  # Get a random road position for food - within 200m of origin
   defp get_food_road_position(config) do
     geo_config = Application.get_env(:swai_node, :geo, [])
     origin_lat = Keyword.get(geo_config, :latitude, 52.5347)
     origin_lon = Keyword.get(geo_config, :longitude, 17.5828)
 
-    case RoadNetwork.random_road_point() do
+    case RoadNetwork.random_road_point_near(origin_lat, origin_lon, 200) do
       {lat, lon, _node_id} ->
         lat_lon_to_world(lat, lon, config, origin_lat, origin_lon)
 

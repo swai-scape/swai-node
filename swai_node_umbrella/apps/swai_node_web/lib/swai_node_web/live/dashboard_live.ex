@@ -13,31 +13,31 @@ defmodule SwaiNodeWeb.DashboardLive do
 
   use SwaiNodeWeb, :live_view
 
-  alias SwaiNode.Simulation.WorldServer
+  alias SwaiNode.Simulation.HexWorldServer
   alias SwaiNode.Training.TrainingServer
 
   @pubsub SwaiNode.PubSub
   @world_topic "world:state"
   @training_topic "training:events"
+  @agent_moved_topic "agent:moved"
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(@pubsub, @world_topic)
       Phoenix.PubSub.subscribe(@pubsub, @training_topic)
+      Phoenix.PubSub.subscribe(@pubsub, @agent_moved_topic)
     end
 
     # Get initial state from both servers
-    world_state = WorldServer.get_state()
-    world_stats = WorldServer.get_stats()
+    world_state = HexWorldServer.get_state()
+    world_stats = HexWorldServer.get_stats()
     training_stats = TrainingServer.get_stats()
     training_running = TrainingServer.running?()
 
-    # Get geo config for world map
-    geo_config = Application.get_env(:swai_node, :geo, %{})
-    longitude = geo_config[:longitude] || 4.9041
-    latitude = geo_config[:latitude] || 52.3676
-    zoom = geo_config[:default_zoom] || 17
+    # Arena config (replaces geo config)
+    arena_radius = world_state[:config][:arena_radius] || 25
+    hex_size = world_state[:config][:hex_size] || 12
 
     socket =
       socket
@@ -45,9 +45,8 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:world_stats, world_stats)
       |> assign(:training_stats, training_stats)
       |> assign(:training_running, training_running)
-      |> assign(:geo_longitude, longitude)
-      |> assign(:geo_latitude, latitude)
-      |> assign(:geo_zoom, zoom)
+      |> assign(:arena_radius, arena_radius)
+      |> assign(:hex_size, hex_size)
       # Population tracking
       |> assign(:behavioral_types, %{herbivore: 0, omnivore: 0, carnivore: 0})
       |> assign(:type_history, [])
@@ -65,12 +64,48 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:champion_fitness, 0.0)
       |> assign(:audio_enabled, false)
 
+    # Push initial arena state (walls + config) to frontend when connected
+    socket =
+      if connected?(socket) do
+        walls = world_state[:walls] || []
+        push_event(socket, "arena_init", %{
+          walls: walls,
+          config: %{arena_radius: arena_radius, hex_size: hex_size}
+        })
+      else
+        socket
+      end
+
     {:ok, socket}
   end
 
   # ==========================================================================
   # World Events (visualization)
   # ==========================================================================
+
+  @impl true
+  def handle_info({:arena_init, data}, socket) do
+    # Push arena initialization to frontend (walls and config)
+    socket = push_event(socket, "arena_init", data)
+    {:noreply, socket}
+  end
+
+  # ==========================================================================
+  # Agent Movement Events (fine-grained updates)
+  # ==========================================================================
+
+  @impl true
+  def handle_info(%{type: :agent_moved} = event, socket) do
+    # Push individual movement event to frontend
+    socket = push_event(socket, "agent_moved", %{
+      agent_id: event.agent_id,
+      from_hex: Tuple.to_list(event.from_hex),
+      to_hex: Tuple.to_list(event.to_hex),
+      direction: event.direction,
+      tick: event.tick
+    })
+    {:noreply, socket}
+  end
 
   @impl true
   def handle_info({:world_update, world_state}, socket) do
@@ -224,8 +259,8 @@ defmodule SwaiNodeWeb.DashboardLive do
   @impl true
   def handle_event("start", _params, socket) do
     # Start world simulation
-    WorldServer.play()
-    WorldServer.set_mode(:realtime)
+    HexWorldServer.play()
+    HexWorldServer.set_mode(:realtime)
 
     # Try to start training (may fail if TrainingServer has issues)
     training_running =
@@ -249,7 +284,7 @@ defmodule SwaiNodeWeb.DashboardLive do
   @impl true
   def handle_event("reset", _params, socket) do
     # Reset everything
-    WorldServer.reset()
+    HexWorldServer.reset()
     TrainingServer.reset()
 
     socket =
@@ -427,8 +462,8 @@ defmodule SwaiNodeWeb.DashboardLive do
   end
 
   defp update_world_state(socket) do
-    world_state = WorldServer.get_state()
-    stats = WorldServer.get_stats()
+    world_state = HexWorldServer.get_state()
+    stats = HexWorldServer.get_stats()
 
     socket
     |> assign(:world_state, world_state)
@@ -476,20 +511,19 @@ defmodule SwaiNodeWeb.DashboardLive do
         </div>
       </header>
 
-      <!-- MAIN: Split Screen - Map (2/3) + Insights (1/3) -->
+      <!-- MAIN: Split Screen - Arena (2/3) + Insights (1/3) -->
       <main class="flex-1 min-h-0 flex">
-        <!-- Left: World Map (2/3 width) -->
-        <div class="w-2/3 h-full" id="map-container" phx-update="ignore">
+        <!-- Left: Hex Arena (2/3 width) -->
+        <div class="w-2/3 h-full" id="arena-container" phx-update="ignore">
           <div
-            id="world-map"
-            phx-hook="WorldMap"
-            data-longitude={@geo_longitude}
-            data-latitude={@geo_latitude}
-            data-zoom={@geo_zoom}
-            data-width={@world_state.config.width}
-            data-height={@world_state.config.height}
-            class="w-full h-full"
-          />
+            id="hex-arena"
+            phx-hook="HexArena"
+            data-arena-radius={@arena_radius}
+            data-hex-size={@hex_size}
+            class="w-full h-full bg-gray-900"
+          >
+            <canvas class="w-full h-full"></canvas>
+          </div>
         </div>
 
         <!-- Right: Insights Panel (1/3 width) -->
@@ -520,8 +554,8 @@ defmodule SwaiNodeWeb.DashboardLive do
         <div class="flex items-center justify-between text-sm">
           <div class="flex items-center gap-6">
             <div class="flex items-center gap-2">
-              <span class="text-gray-500">Location:</span>
-              <span class="text-cyan-400 font-mono">{:erlang.float_to_binary(@geo_latitude, decimals: 2)}°, {:erlang.float_to_binary(@geo_longitude, decimals: 2)}°</span>
+              <span class="text-gray-500">Arena:</span>
+              <span class="text-cyan-400 font-mono">Hex r={@arena_radius}</span>
             </div>
             <div class="flex items-center gap-2">
               <span class="text-gray-500">Best Fitness:</span>

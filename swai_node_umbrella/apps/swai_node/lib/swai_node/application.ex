@@ -16,16 +16,17 @@ defmodule SwaiNode.Application do
        repos: Application.fetch_env!(:swai_node, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:swai_node, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: SwaiNode.PubSub},
-      # Road network for street-following agents
-      SwaiNode.Geo.RoadNetwork,
       # Macula mesh client for P2P communication
       SwaiNode.MeshClient,
       # LC event bridge (silo events → Phoenix.PubSub)
       SwaiNode.Simulation.LCEventBridge,
-      # Training server (neuroevolution via macula-neuroevolution)
+      # Training server (neuroevolution coordinator)
       SwaiNode.Training.TrainingServer,
-      # World simulation server (for visualization)
-      SwaiNode.Simulation.WorldServer
+      # Projections (subscribe to training events, build read models)
+      SwaiNode.Projections.FitnessHistory,
+      SwaiNode.Projections.ChampionArchive,
+      # Hex arena simulation server (for visualization)
+      SwaiNode.Simulation.HexWorldServer
     ]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: SwaiNode.Supervisor)

@@ -918,9 +918,9 @@ defmodule SwaiNode.Simulation.WorldServer do
     %{state | food: new_food}
   end
 
-  # Get a random road position for food spawning
+  # Get a random road position for food spawning - within 200m of origin
   defp get_food_road_position(config, origin_lat, origin_lon) do
-    case RoadNetwork.random_road_point() do
+    case RoadNetwork.random_road_point_near(origin_lat, origin_lon, 200) do
       {lat, lon, _node_id} ->
         lat_lon_to_world(lat, lon, config, origin_lat, origin_lon)
 
@@ -1020,6 +1020,22 @@ defmodule SwaiNode.Simulation.WorldServer do
     {x, y}
   end
 
+  # Reverse: convert world x/y back to lat/lon for frontend rendering
+  defp world_to_lat_lon(x, y, config, origin_lat, origin_lon) do
+    meters_per_deg_lat = 111_320
+    meters_per_deg_lon = 111_320 * :math.cos(origin_lat * :math.pi() / 180)
+
+    # Offset from center in meters
+    offset_x = x - config.width / 2
+    offset_y = y - config.height / 2
+
+    # Convert back to lat/lon
+    lon = origin_lon + offset_x / meters_per_deg_lon
+    lat = origin_lat - offset_y / meters_per_deg_lat  # Y inverted
+
+    {lat, lon}
+  end
+
   defp spawn_initial_food(state) do
     %{config: config} = state
     origin_lat = Map.get(state, :origin_lat, 52.5347)
@@ -1070,8 +1086,8 @@ defmodule SwaiNode.Simulation.WorldServer do
       behavioral_types = calculate_behavioral_types(agents_list)
 
       render_state = %{
-        agents: Enum.map(agents_list, &agent_to_render/1),
-        food: state.food,
+        agents: Enum.map(agents_list, &agent_to_render(&1, state)),
+        food: Enum.map(state.food, &food_to_render(&1, state)),
         tick: state.tick,
         population: map_size(state.agents),
         running: state.running,
@@ -1124,11 +1140,15 @@ defmodule SwaiNode.Simulation.WorldServer do
     {best, Float.round(avg, 1)}
   end
 
-  defp agent_to_render(agent) do
+  defp agent_to_render(agent, state) do
+    {lat, lon} = world_to_lat_lon(agent.x, agent.y, state.config, state.origin_lat, state.origin_lon)
+
     %{
       id: agent.id,
       x: agent.x,
       y: agent.y,
+      lat: lat,
+      lon: lon,
       direction: agent.direction,
       energy: agent.energy,
       fitness: agent.fitness,
@@ -1137,7 +1157,20 @@ defmodule SwaiNode.Simulation.WorldServer do
       signal: Map.get(agent, :signal, 0.5),
       species_id: Map.get(agent, :species_id, "gen0"),
       wants_attack: Map.get(agent, :wants_attack, false),
-      kills: Map.get(agent, :kills, 0)
+      kills: Map.get(agent, :kills, 0),
+      food_eaten: Map.get(agent, :food_eaten, 0)
+    }
+  end
+
+  defp food_to_render({x, y, energy}, state) do
+    {lat, lon} = world_to_lat_lon(x, y, state.config, state.origin_lat, state.origin_lon)
+
+    %{
+      x: x,
+      y: y,
+      lat: lat,
+      lon: lon,
+      energy: energy
     }
   end
 

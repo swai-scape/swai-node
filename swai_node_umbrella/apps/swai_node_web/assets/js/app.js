@@ -29,12 +29,14 @@ import topbar from "../vendor/topbar"
 import {WorldCanvas} from "./hooks/world_canvas"
 import {WorldMap} from "./hooks/world_map"
 import {EChartsHook} from "./hooks/echarts_hook"
+import HexArena from "./hooks/hex_arena"
 
 const Hooks = {
   ...colocatedHooks,
   WorldCanvas,
   WorldMap,
-  EChartsHook
+  EChartsHook,
+  HexArena
 }
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")

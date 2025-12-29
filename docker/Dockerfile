@@ -147,8 +147,13 @@ WORKDIR /home/app
 # Copy release from builder
 COPY --from=builder --chown=app:app /app/_build/prod/rel/swai_node ./
 
-# Create data directories
+# Create data directories (both for volume mount and app-local)
 RUN mkdir -p /home/app/data/esdb /home/app/data/sqlite /home/app/data/macula
+
+# Create /data directory for docker volume mount (as app user can't create it)
+USER root
+RUN mkdir -p /data/esdb /data/sqlite /data/macula && chown -R app:app /data
+USER app
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

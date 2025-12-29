@@ -492,16 +492,22 @@ export const WorldMap = {
   // ==========================================================================
 
   getFoodCoords(food) {
+    // Use lat/lon directly from backend - no conversion needed
     if (food.lat !== undefined && food.lon !== undefined) {
       return { lat: food.lat, lon: food.lon };
     }
+    // Fallback for legacy data
+    console.warn('Food missing lat/lon, using fallback conversion');
     return this.pixelToLatLon(food.x, food.y);
   },
 
   getAgentCoords(agent) {
+    // Use lat/lon directly from backend - no conversion needed
     if (agent.lat !== undefined && agent.lon !== undefined) {
       return { lat: agent.lat, lon: agent.lon };
     }
+    // Fallback for legacy data
+    console.warn('Agent missing lat/lon, using fallback conversion');
     return this.pixelToLatLon(agent.x, agent.y);
   },
 

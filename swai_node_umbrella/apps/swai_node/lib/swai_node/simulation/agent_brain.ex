@@ -29,6 +29,12 @@ defmodule SwaiNode.Simulation.AgentBrain do
   @output_size 6
   @activation :tanh
 
+  # Hex arena constants
+  @hex_input_size 29   # 18 vision + 4 hearing + 3 smell + 4 state
+  @hex_hidden_layers [32, 16]
+  @hex_output_size 9   # 6 directions + stay + signal + attack
+  @hex_vision_channels 18  # 6 rays × 3 types
+
   @max_age 10000
   @max_energy 200.0
   @max_generation 100  # For normalization
@@ -47,10 +53,14 @@ defmodule SwaiNode.Simulation.AgentBrain do
   @doc """
   Evaluate the network with the given inputs.
 
-  Returns a list of 4 outputs: [turn, move, eat, reproduce]
+  Returns a list of outputs matching the network architecture.
   """
   @spec evaluate(term(), list(float())) :: list(float())
   def evaluate(network, inputs) when length(inputs) == @input_size do
+    :network_evaluator.evaluate(network, inputs)
+  end
+
+  def evaluate(network, inputs) when length(inputs) == @hex_input_size do
     :network_evaluator.evaluate(network, inputs)
   end
 
@@ -226,5 +236,109 @@ defmodule SwaiNode.Simulation.AgentBrain do
     parent_network
     |> clone()
     |> mutate(mutation_rate, mutation_strength)
+  end
+
+  # ===========================================================================
+  # Hex Arena Functions
+  # ===========================================================================
+
+  @doc """
+  Create a new neural network for hex arena agents.
+
+  Network architecture:
+  - Inputs (29): 18 vision + 4 hearing + 3 smell + 4 state
+  - Hidden: [32, 16] neurons
+  - Outputs (9): 6 directions + stay + signal + attack
+  """
+  @spec create_hex_network() :: term()
+  def create_hex_network do
+    :network_evaluator.create_feedforward(@hex_input_size, @hex_hidden_layers, @hex_output_size, @activation)
+  end
+
+  @doc """
+  Build input vector for hex arena agents.
+
+  Vision data: list of 18 floats - 6 rays × 3 channels (food, agent, wall)
+  Hearing data: list of 4 floats - signals from 4 nearest agents
+  Smell data: list of 3 floats - [food_density, prey_density, threat_density]
+  """
+  @spec build_hex_inputs(map(), list(float()), list(float()), list(float())) :: list(float())
+  def build_hex_inputs(agent_state, vision_data, hearing_data \\ [0.0, 0.0, 0.0, 0.0], smell_data \\ [0.0, 0.0, 0.0])
+
+  def build_hex_inputs(agent_state, vision_data, hearing_data, smell_data)
+      when length(vision_data) == @hex_vision_channels and
+           length(hearing_data) == @hearing_channels and
+           length(smell_data) == @smell_channels do
+    %{energy: energy, age: age, signal: signal, generation: generation} = agent_state
+
+    # Normalize inputs to 0-1 range
+    normalized_energy = min(energy / @max_energy, 1.0)
+    normalized_age = min(age / @max_age, 1.0)
+    normalized_signal = signal || 0.0
+    normalized_generation = min(generation / @max_generation, 1.0)
+
+    # Combine: vision (18) + hearing (4) + smell (3) + energy (1) + age (1) + signal (1) + generation (1) = 29
+    vision_data ++ hearing_data ++ smell_data ++ [
+      normalized_energy,
+      normalized_age,
+      normalized_signal,
+      normalized_generation
+    ]
+  end
+
+  # Fallback with default signal
+  def build_hex_inputs(agent_state, vision_data, hearing_data, smell_data) when length(vision_data) == @hex_vision_channels do
+    agent_with_defaults = Map.merge(%{signal: 0.0, generation: 0, age: 0, energy: 100.0}, agent_state)
+    build_hex_inputs(agent_with_defaults, vision_data, hearing_data, smell_data)
+  end
+
+  @doc """
+  Parse hex network outputs into actions.
+
+  Outputs: [E, NE, NW, W, SW, SE, STAY, signal, attack]
+  Returns map with direction preferences and actions.
+  """
+  @spec parse_hex_outputs(list(float())) :: map()
+  def parse_hex_outputs(outputs) when length(outputs) == @hex_output_size do
+    [e, ne, nw, w, sw, se, stay, signal, attack] = outputs
+
+    # Apply softmax to direction outputs for probability distribution
+    direction_raw = [e, ne, nw, w, sw, se, stay]
+    directions = softmax(direction_raw)
+
+    %{
+      directions: directions,  # List of 7 normalized preferences
+      signal: (signal + 1.0) / 2.0,  # Convert from -1..1 to 0..1
+      attack: attack > 0.7  # High threshold for attack
+    }
+  end
+
+  @doc """
+  Clone a hex network (create a copy with same weights).
+  """
+  @spec clone_hex_network(term()) :: term()
+  def clone_hex_network(network) do
+    weights = get_weights(network)
+    new_network = create_hex_network()
+    set_weights(new_network, weights)
+  end
+
+  @doc """
+  Create offspring network from hex parent (clone + mutate).
+  """
+  @spec create_hex_offspring(term(), float(), float()) :: term()
+  def create_hex_offspring(parent_network, mutation_rate \\ 0.1, mutation_strength \\ 0.3) do
+    parent_network
+    |> clone_hex_network()
+    |> mutate(mutation_rate, mutation_strength)
+  end
+
+  # Softmax function for direction selection
+  defp softmax(values) do
+    # Subtract max for numerical stability
+    max_val = Enum.max(values)
+    exp_values = Enum.map(values, fn v -> :math.exp(v - max_val) end)
+    sum_exp = Enum.sum(exp_values)
+    Enum.map(exp_values, fn v -> v / sum_exp end)
   end
 end
