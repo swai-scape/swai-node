@@ -48,9 +48,10 @@ defmodule SwaiNode.MixProject do
       # runtime: false in dev - don't auto-start (QUIC TLS requires proper setup)
       {:macula, "~> 0.16.0", runtime: Mix.env() == :prod},
 
-      # Neuroevolution Stack (from hex.pm)
+      # Neuroevolution Stack
       {:macula_tweann, "~> 0.18.0"},
-      {:macula_neuroevolution, "~> 0.27.0"},
+      # Path dependency for Domain SDK testing - revert to hex.pm for production
+      {:macula_neuroevolution, path: "../../../../../macula-io/macula-neuroevolution"},
 
       # CQRS/Event Sourcing (from hex.pm)
       # Note: erl_esdb already depends on erl_esdb_gater
