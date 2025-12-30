@@ -116,7 +116,10 @@ defmodule SwaiNode.DomainSDK.TestCoevolution do
       predator: %{best: predator_best, avg: predator_avg}
     }}
 
-    Phoenix.PubSub.broadcast(@pubsub, @coevolution_topic, event)
+    IO.puts(">>> Broadcasting gen #{generation}: forager=#{forager_best}, predator=#{predator_best}")
+    result = Phoenix.PubSub.broadcast(@pubsub, @coevolution_topic, event)
+    IO.puts(">>> Broadcast result: #{inspect(result)}")
+    result
   end
 
   defp evaluate_species(registry, species_id, species_module, episodes) do

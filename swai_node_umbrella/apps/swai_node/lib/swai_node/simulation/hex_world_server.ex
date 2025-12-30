@@ -47,7 +47,7 @@ defmodule SwaiNode.Simulation.HexWorldServer do
   @default_config %{
     arena_radius: 40,
     hex_size: 8,
-    starting_population: 1,  # Single agent for debugging
+    starting_population: 20,  # Active population for visualization
     food_spawn_rate: 0.8,
     max_food: 150,
     mutation_rate: 0.1,
@@ -603,7 +603,8 @@ defmodule SwaiNode.Simulation.HexWorldServer do
   defp maintain_population(state) do
     %{config: config, agents: agents} = state
     current_pop = map_size(agents)
-    min_pop = round(config.starting_population * @min_population_ratio)
+    # Ensure min_pop is at least 1 to prevent extinction
+    min_pop = max(1, round(config.starting_population * @min_population_ratio))
 
     if current_pop < min_pop do
       # Spawn evolved agents to maintain population

@@ -24,7 +24,10 @@ defmodule SwaiNodeWeb.DashboardLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    require Logger
+    Logger.warning(">>> MOUNT called, connected?=#{connected?(socket)}, transport=#{socket.transport_pid != nil}")
     if connected?(socket) do
+      Logger.warning(">>> LiveView WebSocket CONNECTED!")
       Phoenix.PubSub.subscribe(@pubsub, @world_topic)
       Phoenix.PubSub.subscribe(@pubsub, @training_topic)
       Phoenix.PubSub.subscribe(@pubsub, @agent_moved_topic)
@@ -68,6 +71,8 @@ defmodule SwaiNodeWeb.DashboardLive do
       |> assign(:events, [])
       |> assign(:champion_fitness, 0.0)
       |> assign(:audio_enabled, false)
+      # Sidebar state
+      |> assign(:sidebar_open, true)
 
     # Push initial arena state (walls + config) to frontend when connected
     socket =
@@ -174,9 +179,11 @@ defmodule SwaiNodeWeb.DashboardLive do
 
   @impl true
   def handle_info({:generation_complete, stats}, socket) do
+    require Logger
     generation = stats.generation
     best = stats.best_fitness
     avg = stats.avg_fitness
+    Logger.debug("[Dashboard] generation_complete: gen=#{generation}, best=#{best}, avg=#{avg}")
 
     point = %{generation: generation, best: best, avg: avg}
     fitness_history = [point | socket.assigns.fitness_history] |> Enum.take(100)
@@ -340,7 +347,10 @@ defmodule SwaiNodeWeb.DashboardLive do
   end
 
   @impl true
-  def handle_event("run_coevolution", _params, socket) do
+  def handle_event("run_coevolution", params, socket) do
+    require Logger
+    Logger.warning(">>> COEVOLVE BUTTON CLICKED! params=#{inspect(params)}")
+    IO.puts(">>> COEVOLVE BUTTON CLICKED! params=#{inspect(params)}")
     # Don't start if already running
     if socket.assigns.coevolution_running do
       {:noreply, socket}
@@ -364,6 +374,25 @@ defmodule SwaiNodeWeb.DashboardLive do
 
       {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("test_click", _params, socket) do
+    require Logger
+    Logger.warning(">>> TEST CLICK RECEIVED!")
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_sidebar", _params, socket) do
+    {:noreply, assign(socket, :sidebar_open, !socket.assigns.sidebar_open)}
+  end
+
+  @impl true
+  def handle_event(event, params, socket) do
+    require Logger
+    Logger.warning(">>> UNKNOWN EVENT: #{event}, params=#{inspect(params)}")
+    {:noreply, socket}
   end
 
   # ==========================================================================
@@ -572,33 +601,33 @@ defmodule SwaiNodeWeb.DashboardLive do
   def render(assigns) do
     ~H"""
     <div class="h-screen bg-gray-900 text-white flex flex-col overflow-hidden">
-      <!-- HEADER: Node Stats -->
-      <header class="bg-gray-800 border-b border-gray-700 px-4 py-2 flex-shrink-0">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-4">
-            <h1 class="text-lg font-bold text-purple-400">SwaiNode</h1>
-            <div class="flex items-center gap-2">
-              <button phx-click="start" class="px-3 py-1 rounded text-sm font-medium bg-green-600 hover:bg-green-500">
+      <!-- HEADER: Node Stats (responsive) -->
+      <header class="bg-gray-800 border-b border-gray-700 px-2 sm:px-4 py-2 flex-shrink-0">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-0">
+          <div class="flex items-center gap-2 sm:gap-4 flex-wrap">
+            <h1 class="text-base sm:text-lg font-bold text-purple-400">SwaiNode</h1>
+            <div class="flex items-center gap-1 sm:gap-2">
+              <button phx-click="start" class="px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium bg-green-600 hover:bg-green-500">
                 Start
               </button>
-              <button phx-click="reset" class="px-3 py-1 rounded text-sm font-medium bg-red-600 hover:bg-red-500">
+              <button phx-click="reset" class="px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium bg-red-600 hover:bg-red-500">
                 Reset
               </button>
-              <button phx-click="run_coevolution" class={"px-3 py-1 rounded text-sm font-medium #{if @coevolution_running, do: "bg-purple-800 cursor-not-allowed", else: "bg-purple-600 hover:bg-purple-500"}"} disabled={@coevolution_running}>
-                {if @coevolution_running, do: "🧬 Running...", else: "🧬 Coevolve"}
+              <button phx-click="run_coevolution" class="px-2 sm:px-3 py-1 rounded text-xs sm:text-sm font-medium bg-purple-600 hover:bg-purple-500">
+                <span class="hidden sm:inline">🧬 </span>Coevolve
               </button>
             </div>
           </div>
-          <div class="flex items-center gap-6 text-sm">
-            <div class="flex items-center gap-2">
+          <div class="flex items-center gap-3 sm:gap-6 text-xs sm:text-sm">
+            <div class="flex items-center gap-1 sm:gap-2">
               <span class="text-gray-500">Tick:</span>
               <span class="text-white font-mono">{@world_stats.tick}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-1 sm:gap-2">
               <span class="text-gray-500">Agents:</span>
               <span class="text-green-400 font-mono">{@world_stats.population}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="hidden sm:flex items-center gap-2">
               <span class="text-gray-500">Generation:</span>
               <span class="text-purple-400 font-mono">{@training_stats[:generation] || 0}</span>
             </div>
@@ -606,10 +635,45 @@ defmodule SwaiNodeWeb.DashboardLive do
         </div>
       </header>
 
-      <!-- MAIN: Split Screen - Arena (2/3) + Insights (1/3) -->
-      <main class="flex-1 min-h-0 flex">
-        <!-- Left: Hex Arena (2/3 width) -->
-        <div class="w-2/3 h-full" id="arena-container" phx-update="ignore">
+      <!-- MAIN: Split Screen with collapsible sidebar (responsive) -->
+      <main class="flex-1 min-h-0 flex flex-col lg:flex-row relative">
+        <!-- Left Sidebar: Legend & AI Insights (hidden on mobile, collapsible on lg+) -->
+        <div class={[
+          "bg-gray-800 border-r border-gray-700 flex-col overflow-hidden transition-all duration-300",
+          "hidden lg:flex",  # Hide completely on mobile/tablet, show on lg+
+          if(@sidebar_open, do: "lg:w-64 xl:w-72", else: "w-0")
+        ]}>
+          <div class={["h-full flex flex-col", if(@sidebar_open, do: "opacity-100", else: "opacity-0 pointer-events-none")]}>
+            <!-- Legend -->
+            <.legend_panel behavioral_types={@behavioral_types} world_stats={@world_stats} />
+
+            <!-- AI Insights -->
+            <.insights_panel
+              world_stats={@world_stats}
+              behavioral_types={@behavioral_types}
+              social_metrics={@social_metrics}
+              events={@events}
+              champion_fitness={@champion_fitness}
+            />
+          </div>
+        </div>
+
+        <!-- Sidebar Toggle Button (only visible on lg+) -->
+        <button
+          phx-click="toggle_sidebar"
+          class={[
+            "absolute top-1/2 -translate-y-1/2 z-10 bg-gray-700 hover:bg-gray-600 text-gray-300 p-1 rounded-r-md shadow-lg transition-all",
+            "hidden lg:block"
+          ]}
+          style={"left: " <> if(@sidebar_open, do: "16rem", else: "0")}
+        >
+          <svg class={"w-4 h-4 transition-transform " <> if(@sidebar_open, do: "", else: "rotate-180")} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+          </svg>
+        </button>
+
+        <!-- Center: Hex Arena (takes most space) -->
+        <div class="flex-1 min-h-[50vh] lg:min-h-0 lg:h-full" id="arena-container" phx-update="ignore">
           <div
             id="hex-arena"
             phx-hook="HexArena"
@@ -621,20 +685,8 @@ defmodule SwaiNodeWeb.DashboardLive do
           </div>
         </div>
 
-        <!-- Right: Insights Panel (1/3 width) -->
-        <div class="w-1/3 h-full bg-gray-850 border-l border-gray-700 flex flex-col overflow-hidden">
-          <!-- Legend -->
-          <.legend_panel behavioral_types={@behavioral_types} world_stats={@world_stats} />
-
-          <!-- AI Insights -->
-          <.insights_panel
-            world_stats={@world_stats}
-            behavioral_types={@behavioral_types}
-            social_metrics={@social_metrics}
-            events={@events}
-            champion_fitness={@champion_fitness}
-          />
-
+        <!-- Right: Charts Panel (stacks below on mobile, side panel on lg+) -->
+        <div class="w-full lg:w-72 xl:w-80 h-48 sm:h-56 lg:h-full bg-gray-850 border-t lg:border-t-0 lg:border-l border-gray-700 flex flex-col overflow-hidden flex-shrink-0">
           <!-- Population Charts -->
           <.charts_panel
             fitness_history={@fitness_history}
@@ -644,23 +696,23 @@ defmodule SwaiNodeWeb.DashboardLive do
         </div>
       </main>
 
-      <!-- FOOTER: Quick Stats -->
-      <footer class="bg-gray-800 border-t border-gray-700 px-4 py-2 flex-shrink-0">
-        <div class="flex items-center justify-between text-sm">
-          <div class="flex items-center gap-6">
-            <div class="flex items-center gap-2">
+      <!-- FOOTER: Quick Stats (responsive) -->
+      <footer class="bg-gray-800 border-t border-gray-700 px-2 sm:px-4 py-1.5 sm:py-2 flex-shrink-0">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between text-xs sm:text-sm gap-1 sm:gap-0">
+          <div class="flex items-center gap-3 sm:gap-6">
+            <div class="flex items-center gap-1 sm:gap-2">
               <span class="text-gray-500">Arena:</span>
-              <span class="text-cyan-400 font-mono">Hex r={@arena_radius}</span>
+              <span class="text-cyan-400 font-mono">r={@arena_radius}</span>
             </div>
-            <div class="flex items-center gap-2">
-              <span class="text-gray-500">Best Fitness:</span>
+            <div class="flex items-center gap-1 sm:gap-2">
+              <span class="text-gray-500">Best:</span>
               <span class="text-yellow-400 font-mono">{format_number(@training_stats[:best_fitness] || 0)}</span>
             </div>
           </div>
-          <div class="flex items-center gap-6 text-gray-400">
+          <div class="flex items-center gap-3 sm:gap-6 text-gray-400">
             <span>Born: <span class="text-green-400">{@world_stats.total_births}</span></span>
-            <span>Hunted: <span class="text-red-400">{@world_stats.total_kills}</span></span>
-            <span>Starved: <span class="text-orange-400">{@world_stats.total_deaths}</span></span>
+            <span class="hidden sm:inline">Hunted: <span class="text-red-400">{@world_stats.total_kills}</span></span>
+            <span>Died: <span class="text-orange-400">{@world_stats.total_deaths}</span></span>
           </div>
         </div>
       </footer>
@@ -778,32 +830,35 @@ defmodule SwaiNodeWeb.DashboardLive do
 
   defp charts_panel(assigns) do
     ~H"""
-    <div class="flex-1 p-4 overflow-y-auto space-y-4">
-      <!-- Coevolution Fitness Chart -->
-      <div class="bg-gray-800 rounded-lg p-3">
-        <div class="text-xs text-gray-500 mb-2 flex items-center gap-2">
-          <span>🧬</span>
-          <span>Coevolution: Forager vs Predator</span>
+    <div class="flex-1 p-2 lg:p-4 overflow-x-auto lg:overflow-x-hidden overflow-y-hidden lg:overflow-y-auto">
+      <!-- Horizontal scroll on mobile, vertical on lg+ -->
+      <div class="flex lg:flex-col gap-2 lg:gap-4 h-full lg:h-auto min-w-max lg:min-w-0">
+        <!-- Coevolution Fitness Chart -->
+        <div class="bg-gray-800 rounded-lg p-2 lg:p-3 w-48 sm:w-56 lg:w-auto flex-shrink-0 lg:flex-shrink">
+          <div class="text-[10px] lg:text-xs text-gray-500 mb-1 lg:mb-2 flex items-center gap-1 lg:gap-2">
+            <span>🧬</span>
+            <span class="truncate">Coevolution</span>
+          </div>
+          <div id="coevolution-chart" phx-hook="EChart" phx-update="ignore" class="h-28 sm:h-32 lg:h-32"></div>
         </div>
-        <div id="coevolution-chart" phx-hook="EChart" phx-update="ignore" class="h-32"></div>
-      </div>
 
-      <!-- Fitness Chart -->
-      <div class="bg-gray-800 rounded-lg p-3">
-        <div class="text-xs text-gray-500 mb-2">Fitness Over Time</div>
-        <div id="fitness-chart" phx-hook="EChart" phx-update="ignore" class="h-24"></div>
-      </div>
+        <!-- Fitness Chart -->
+        <div class="bg-gray-800 rounded-lg p-2 lg:p-3 w-48 sm:w-56 lg:w-auto flex-shrink-0 lg:flex-shrink">
+          <div class="text-[10px] lg:text-xs text-gray-500 mb-1 lg:mb-2 truncate">Fitness</div>
+          <div id="fitness-chart" phx-hook="EChart" phx-update="ignore" class="h-20 sm:h-24 lg:h-24"></div>
+        </div>
 
-      <!-- Population Chart -->
-      <div class="bg-gray-800 rounded-lg p-3">
-        <div class="text-xs text-gray-500 mb-2">Population by Type</div>
-        <div id="population-chart" phx-hook="EChart" phx-update="ignore" class="h-24"></div>
-      </div>
+        <!-- Population Chart -->
+        <div class="bg-gray-800 rounded-lg p-2 lg:p-3 w-48 sm:w-56 lg:w-auto flex-shrink-0 lg:flex-shrink">
+          <div class="text-[10px] lg:text-xs text-gray-500 mb-1 lg:mb-2 truncate">Population</div>
+          <div id="population-chart" phx-hook="EChart" phx-update="ignore" class="h-20 sm:h-24 lg:h-24"></div>
+        </div>
 
-      <!-- Diversity Chart -->
-      <div class="bg-gray-800 rounded-lg p-3">
-        <div class="text-xs text-gray-500 mb-2">Genetic Diversity</div>
-        <div id="diversity-chart" phx-hook="EChart" phx-update="ignore" class="h-24"></div>
+        <!-- Diversity Chart -->
+        <div class="bg-gray-800 rounded-lg p-2 lg:p-3 w-48 sm:w-56 lg:w-auto flex-shrink-0 lg:flex-shrink">
+          <div class="text-[10px] lg:text-xs text-gray-500 mb-1 lg:mb-2 truncate">Diversity</div>
+          <div id="diversity-chart" phx-hook="EChart" phx-update="ignore" class="h-20 sm:h-24 lg:h-24"></div>
+        </div>
       </div>
     </div>
     """

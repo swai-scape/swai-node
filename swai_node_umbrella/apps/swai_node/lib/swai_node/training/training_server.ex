@@ -44,13 +44,13 @@ defmodule SwaiNode.Training.TrainingServer do
 
   # Default training configuration
   @default_config %{
-    population_size: 30,
-    selection_ratio: 0.20,
-    mutation_rate: 0.10,
-    mutation_strength: 0.3,
+    population_size: 100,         # Larger population = more diversity
+    selection_ratio: 0.15,        # Keep top 15% (15 individuals)
+    mutation_rate: 0.20,          # Higher mutation for exploration
+    mutation_strength: 0.4,       # Stronger mutations
     network_topology: HexArena.network_topology(),
     max_generations: 10000,
-    eval_ticks: 200,
+    eval_ticks: 300,              # Longer episodes for more learning
     arena_radius: HexArena.default_arena_radius()
   }
 
@@ -261,15 +261,26 @@ defmodule SwaiNode.Training.TrainingServer do
     %{state | last_stats: stats}
   end
 
+  # population_evaluated is what neuroevolution actually sends when a generation completes
+  defp handle_neuro_event({:population_evaluated, data}, state) do
+    gen_stats = Map.get(data, :generation_stats, %{})
+    stats = extract_stats(gen_stats, state.last_stats)
+
+    Logger.debug("[TrainingServer] Generation complete: gen=#{stats.generation}, best=#{stats.best_fitness}")
+    # Broadcast as generation_complete for dashboard
+    broadcast({:generation_complete, stats})
+
+    %{state | last_stats: stats}
+  end
+
   defp handle_neuro_event({:training_complete, data}, state) do
     Logger.info("[TrainingServer] Training complete")
     broadcast({:training_complete, data})
     %{state | running: false}
   end
 
-  defp handle_neuro_event({event_type, data}, state) do
+  defp handle_neuro_event({event_type, _data}, state) do
     Logger.debug("[TrainingServer] Event: #{event_type}")
-    broadcast({event_type, data})
     state
   end
 

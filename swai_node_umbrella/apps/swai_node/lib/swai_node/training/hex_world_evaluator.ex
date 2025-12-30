@@ -21,12 +21,12 @@ defmodule SwaiNode.Training.HexWorldEvaluator do
   alias SwaiNode.Simulation.{Hex, HexMaze, HexVision, AgentBrain}
   alias SwaiNode.Domain.HexArena
 
-  # Pull parameters from domain definition
-  @arena_radius HexArena.default_arena_radius()
-  @wall_percent HexArena.wall_percent()
-  @open_center_radius HexArena.open_center_radius()
-  @max_food HexArena.max_food()
-  @food_spawn_rate HexArena.food_spawn_rate()
+  # Evaluation arena is smaller than display arena for faster learning
+  @arena_radius 15  # Smaller arena = denser food = faster learning
+  @wall_percent 8   # Fewer walls = easier navigation
+  @open_center_radius 3
+  @max_food 60      # Keep food density high
+  @food_spawn_rate 0.9  # Spawn food more often
   @starting_energy HexArena.starting_energy()
   @max_energy HexArena.max_energy()
   @move_cost HexArena.move_cost()
@@ -117,8 +117,8 @@ defmodule SwaiNode.Training.HexWorldEvaluator do
       network: network
     }
 
-    # Initial food
-    food = spawn_initial_food(walls, 10)
+    # Initial food - spawn more for denser gradient signal
+    food = spawn_initial_food(walls, 40)
 
     # Track initial distance to nearest food for proximity bonus
     initial_food_dist = nearest_food_distance(agent.hex, food)
@@ -179,10 +179,12 @@ defmodule SwaiNode.Training.HexWorldEvaluator do
 
     # Calculate approach bonus: reward getting closer to food
     new_dist = nearest_food_distance(new_hex, food)
-    # Bonus when distance decreases (got closer), scaled by 2 points per hex closer
-    # Keep it modest so eating (150 pts) is clearly better than just approaching
-    delta_bonus = if new_dist < prev_dist, do: (prev_dist - new_dist) * 2.0, else: 0.0
-    new_approach_bonus = approach_bonus + delta_bonus
+    # Strong bonus for getting closer - 5 points per hex closer
+    # This creates a gradient toward food even before eating
+    delta_bonus = if new_dist < prev_dist, do: (prev_dist - new_dist) * 5.0, else: 0.0
+    # Small penalty for moving away to discourage random wandering
+    delta_penalty = if new_dist > prev_dist, do: (new_dist - prev_dist) * 1.0, else: 0.0
+    new_approach_bonus = approach_bonus + delta_bonus - delta_penalty
 
     run_loop(agent, food, walls, tick + 1, max_ticks, new_dist, new_approach_bonus)
   end

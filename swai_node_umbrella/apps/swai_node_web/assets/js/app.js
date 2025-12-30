@@ -36,6 +36,7 @@ const Hooks = {
   WorldCanvas,
   WorldMap,
   EChartsHook,
+  EChart: EChartsHook,  // Alias for convenience
   HexArena
 }
 

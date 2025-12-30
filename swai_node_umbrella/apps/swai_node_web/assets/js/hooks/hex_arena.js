@@ -42,9 +42,18 @@ const HexArena = {
     this.lastUpdateTime = performance.now();
     this.interpolationDuration = 50; // ms - matches tick interval
 
+    // Zoom and pan state
+    this.scale = 1.0;
+    this.panX = 0;
+    this.panY = 0;
+    this.isPanning = false;
+    this.lastMouseX = 0;
+    this.lastMouseY = 0;
+
     // Rendering
     this.setupCanvas();
     this.startRenderLoop();
+    this.setupZoomAndPan();
 
     // Event handlers
     this.handleEvent("arena_init", (data) => this.handleArenaInit(data));
@@ -54,6 +63,68 @@ const HexArena = {
     // Resize handler
     this.resizeObserver = new ResizeObserver(() => this.setupCanvas());
     this.resizeObserver.observe(this.el);
+  },
+
+  setupZoomAndPan() {
+    // Mouse wheel zoom
+    this.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = this.canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      // Calculate zoom factor
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newScale = Math.max(0.2, Math.min(5, this.scale * zoomFactor));
+
+      // Adjust pan to zoom toward mouse position
+      const scaleDiff = newScale / this.scale;
+      this.panX = mouseX - (mouseX - this.panX) * scaleDiff;
+      this.panY = mouseY - (mouseY - this.panY) * scaleDiff;
+
+      this.scale = newScale;
+    }, { passive: false });
+
+    // Mouse drag to pan
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 0) { // Left click
+        this.isPanning = true;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+        this.canvas.style.cursor = 'grabbing';
+      }
+    });
+
+    this.canvas.addEventListener('mousemove', (e) => {
+      if (this.isPanning) {
+        const dx = e.clientX - this.lastMouseX;
+        const dy = e.clientY - this.lastMouseY;
+        this.panX += dx;
+        this.panY += dy;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
+      }
+    });
+
+    this.canvas.addEventListener('mouseup', () => {
+      this.isPanning = false;
+      this.canvas.style.cursor = 'grab';
+    });
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.isPanning = false;
+      this.canvas.style.cursor = 'grab';
+    });
+
+    // Double-click to reset view
+    this.canvas.addEventListener('dblclick', () => {
+      this.scale = 1.0;
+      this.panX = 0;
+      this.panY = 0;
+    });
+
+    // Set initial cursor
+    this.canvas.style.cursor = 'grab';
   },
 
   destroyed() {
@@ -230,6 +301,11 @@ const HexArena = {
     ctx.fillStyle = this.config.colors.background;
     ctx.fillRect(0, 0, rect.width, rect.height);
 
+    // Apply zoom and pan transformations
+    ctx.save();
+    ctx.translate(this.panX, this.panY);
+    ctx.scale(this.scale, this.scale);
+
     // Draw grid and walls
     this.drawGrid();
 
@@ -238,6 +314,13 @@ const HexArena = {
 
     // Draw agents
     this.agents.forEach(a => this.drawAgent(a));
+
+    ctx.restore();
+
+    // Draw zoom indicator in corner (not affected by transform)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '10px monospace';
+    ctx.fillText(`Zoom: ${Math.round(this.scale * 100)}%`, 10, rect.height - 10);
   },
 
   drawGrid() {
