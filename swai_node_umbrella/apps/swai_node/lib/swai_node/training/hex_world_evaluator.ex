@@ -43,12 +43,18 @@ defmodule SwaiNode.Training.HexWorldEvaluator do
     # Run isolated hex simulation
     result = run_hex_simulation(network, eval_ticks)
 
-    # Calculate fitness directly
+    # Calculate base fitness
     survival_score = result.ticks * 0.1      # Reduced from 0.5 to discourage passive survival
     food_score = result.food_eaten * 150.0   # 150 points per food - eating is the goal!
     kill_score = result.kills * 100.0        # 100 points per kill
     approach_score = result.approach_bonus   # Bonus for moving toward food
-    fitness = survival_score + food_score + kill_score + approach_score
+    base_fitness = survival_score + food_score + kill_score + approach_score
+
+    # Improvement bonus: reward beating the population baseline
+    # This encourages continuous improvement, not just absolute performance
+    baseline = get_fitness_baseline()
+    improvement_bonus = calculate_improvement_bonus(base_fitness, baseline)
+    fitness = base_fitness + improvement_bonus
 
     # Build metrics
     metrics = %{
@@ -56,12 +62,13 @@ defmodule SwaiNode.Training.HexWorldEvaluator do
       food_eaten: result.food_eaten,
       kills: result.kills,
       final_energy: result.energy,
-      approach_bonus: result.approach_bonus
+      approach_bonus: result.approach_bonus,
+      improvement_bonus: improvement_bonus
     }
 
     # Debug: log occasionally
     if :rand.uniform(500) == 1 do
-      Logger.debug("[HexWorldEvaluator] Result: ticks=#{result.ticks}, food=#{result.food_eaten}, approach=#{Float.round(approach_score, 1)}, fitness=#{Float.round(fitness, 1)}")
+      Logger.debug("[HexWorldEvaluator] Result: ticks=#{result.ticks}, food=#{result.food_eaten}, improvement=#{Float.round(improvement_bonus, 1)}, fitness=#{Float.round(fitness, 1)}")
     end
 
     # Update individual record (Erlang record #individual{}):
@@ -74,6 +81,27 @@ defmodule SwaiNode.Training.HexWorldEvaluator do
 
     {:ok, updated_individual}
   end
+
+  # Get the fitness baseline from persistent_term (updated by TrainingServer)
+  defp get_fitness_baseline do
+    try do
+      :persistent_term.get(:fitness_baseline, 0.0)
+    catch
+      _, _ -> 0.0
+    end
+  end
+
+  # Calculate improvement bonus for beating the baseline
+  # - 20% bonus for every 100 points above baseline (diminishing returns via sqrt)
+  # - Capped at 50% of base fitness to prevent runaway bonuses
+  defp calculate_improvement_bonus(fitness, baseline) when fitness > baseline do
+    improvement = fitness - baseline
+    # Square root gives diminishing returns - big improvements early, smaller later
+    raw_bonus = :math.sqrt(improvement) * 10.0
+    # Cap at 50% of base fitness
+    min(raw_bonus, fitness * 0.5)
+  end
+  defp calculate_improvement_bonus(_, _), do: 0.0
 
   @impl :neuroevolution_evaluator
   def calculate_fitness(metrics) when is_map(metrics) do

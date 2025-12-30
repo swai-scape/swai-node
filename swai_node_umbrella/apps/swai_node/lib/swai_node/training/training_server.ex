@@ -130,6 +130,9 @@ defmodule SwaiNode.Training.TrainingServer do
       last_stats: %{generation: 0, best_fitness: 0.0, avg_fitness: 0.0, population: 0}
     }
 
+    # Initialize fitness baseline for improvement bonus
+    :persistent_term.put(:fitness_baseline, 0.0)
+
     # Auto-start training
     send(self(), :auto_start_training)
 
@@ -266,7 +269,14 @@ defmodule SwaiNode.Training.TrainingServer do
     gen_stats = Map.get(data, :generation_stats, %{})
     stats = extract_stats(gen_stats, state.last_stats)
 
-    Logger.debug("[TrainingServer] Generation complete: gen=#{stats.generation}, best=#{stats.best_fitness}")
+    # Update fitness baseline for improvement bonus in evaluator
+    # Use exponential moving average: 90% old baseline + 10% current avg
+    # This creates a slowly-rising bar that rewards consistent improvement
+    old_baseline = :persistent_term.get(:fitness_baseline, 0.0)
+    new_baseline = old_baseline * 0.9 + stats.avg_fitness * 0.1
+    :persistent_term.put(:fitness_baseline, new_baseline)
+
+    Logger.debug("[TrainingServer] Generation complete: gen=#{stats.generation}, best=#{stats.best_fitness}, baseline=#{Float.round(new_baseline, 1)}")
     # Broadcast as generation_complete for dashboard
     broadcast({:generation_complete, stats})
 
